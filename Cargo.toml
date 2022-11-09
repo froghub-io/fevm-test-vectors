@@ -1,0 +1,47 @@
+[package]
+name = "fevm-test-vectors"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+fil_actors_runtime = { path = "../builtin-actors3/runtime", version = "10.0.0-alpha.1"}
+fvm_ipld_hamt = "0.6.0"
+fvm_ipld_amt = { version = "0.5.0", features = ["go-interop"] }
+fvm_shared = { version = "3.0.0-alpha.8", default-features = false }
+num-traits = "0.2.14"
+num-derive = "0.3.3"
+serde = { version = "1.0.136", features = ["derive"] }
+serde_json = "1.0.87"
+lazy_static = { version = "1.4.0"}
+unsigned-varint = "0.7.1"
+byteorder = "1.4.3"
+cid = { version = "0.8.3", default-features = false, features = ["serde-codec"] }
+log = "0.4.14"
+thiserror = "1.0.30"
+anyhow = "1.0.56"
+fvm_ipld_blockstore = "0.1.1"
+fvm_ipld_encoding = "0.3.0"
+multihash = { version = "0.16.1", default-features = false }
+serde_repr = "0.1.8"
+regex = "1"
+itertools = "0.10"
+paste = "1.0.9"
+uint = { version = "0.9.3", default-features = false }
+substrate-bn = "0.6.0"
+impl-serde = "0.4.0"
+rlp = { version = "0.5.1", default-features = false }
+
+# A fake-proofs dependency but... we can't select on that feature here because we enable it from
+# build.rs.
+sha2 = "0.10"
+
+# fil-actor
+fvm_sdk = { version = "3.0.0-alpha.8", optional = true }
+
+derive_builder = "0.10.2"
+hex = "0.4.3"
+rand = { version = "0.8.5" }
+blake2b_simd = { version = "1.0"}
+libsecp256k1 = "0.7.1"
