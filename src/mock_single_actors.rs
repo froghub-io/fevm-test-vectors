@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 
-use crate::{is_create_contract, string_to_big_int, string_to_bytes, string_to_eth_address, EvmContractContext, u256_to_bytes, string_to_i64};
+use crate::util::{is_create_contract, string_to_big_int, string_to_bytes, string_to_eth_address, u256_to_bytes, string_to_i64};
 use cid::multihash::MultihashDigest;
 use cid::Cid;
 use fil_actor_account::State as AccountState;
@@ -34,6 +34,7 @@ use multihash::{Code, MultihashGeneric};
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use crate::EvmContractContext;
 
 lazy_static::lazy_static! {
     // The Solidity compiler creates contiguous array item keys.
@@ -436,18 +437,6 @@ where
         a.head = self.store.put_cbor(&st, Code::Blake2b256).unwrap();
         self.set_actor(addr, a);
     }
-
-    // pub fn mutate_state<C, F>(&mut self, addr: Address, f: F)
-    // where
-    //     C: Cbor,
-    //     F: FnOnce(&mut C),
-    // {
-    //     let mut a = self.get_actor(addr).unwrap();
-    //     let mut st = self.store.get_cbor::<C>(&a.head).unwrap().unwrap();
-    //     f(&mut st);
-    //     a.head = self.store.put_cbor(&st, Code::Blake2b256).unwrap();
-    //     self.set_actor(addr, a);
-    // }
 
     pub fn get_actor_code(&self, actor_type: Type) -> Cid {
         self.actor_codes.get(&actor_type).unwrap().clone()

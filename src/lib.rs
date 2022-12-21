@@ -52,13 +52,15 @@ use vector::PreConditions;
 use vector::StateTreeVector;
 use vector::TestVector;
 use vector::Variant;
+use crate::util::{compute_address_create, is_create_contract, string_to_big_int, string_to_bytes, string_to_eth_address, string_to_u256};
 
 mod cidjson;
 pub mod mock_single_actors;
 pub mod tracing_blockstore;
-mod util;
+pub mod util;
 mod vector;
 pub mod state;
+pub mod extract_evm;
 
 pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> anyhow::Result<()> {
     let actor_codes = get_code_cid_map()?;
@@ -221,87 +223,6 @@ where
     println!("post_state_root: {:?}", post_state_root);
 
     return Ok((pre_state_root, post_state_root));
-}
-
-pub fn compute_address_create(from: &EthAddress, nonce: u64) -> EthAddress {
-    let mut stream = rlp::RlpStream::new();
-    stream.begin_list(2).append(&&from.0[..]).append(&nonce);
-    EthAddress(hash_20(&stream.out()))
-}
-
-pub fn hash_20(data: &[u8]) -> [u8; 20] {
-    hash(SupportedHashes::Keccak256, data)[12..32].try_into().unwrap()
-}
-
-pub fn hash(hasher: SupportedHashes, data: &[u8]) -> Vec<u8> {
-    let hasher = Code::try_from(hasher as u64).unwrap();
-    let (_, digest, written) = hasher.digest(data).into_inner();
-    Vec::from(&digest[..written as usize])
-}
-
-pub fn string_to_u256(str: &str) -> U256 {
-    let v = string_to_bytes(str);
-    let mut r = [0u8; 32];
-    r[32 - v.len()..32].copy_from_slice(&v);
-    U256::from_big_endian(&r)
-}
-
-pub fn string_to_i64(str: &str) -> i64 {
-    let v = string_to_bytes(str);
-    i64::from_str(&*hex::encode(v)).unwrap()
-}
-
-pub fn string_to_big_int(str: &str) -> BigInt {
-    let v = string_to_bytes(str);
-    BigInt::from_str(&*hex::encode(v)).unwrap()
-}
-
-pub fn string_to_eth_address(str: &str) -> EthAddress {
-    let v = string_to_bytes(str);
-    let mut r = [0u8; 20];
-    r[20 - v.len()..20].copy_from_slice(&v);
-    EthAddress(r)
-}
-
-pub fn string_to_bytes(str: &str) -> Vec<u8> {
-    if str.starts_with("0x") {
-        let str = &str[2..str.len()];
-        hex::decode(if str.len().is_odd() {
-            let mut s = String::from("0");
-            s.push_str(str);
-            s
-        } else {
-            str.to_string()
-        })
-        .unwrap()
-    } else {
-        hex::decode(if str.len().is_odd() {
-            let mut s = String::from("0");
-            s.push_str(&str);
-            s
-        } else {
-            str.to_string()
-        })
-        .unwrap()
-    }
-}
-
-pub fn u256_to_bytes(u: &U256) -> Vec<u8> {
-    let mut v = vec![0u8; 32];
-    (0..4).for_each(|i| {
-        let e = hex::decode(hex::encode(u.0[3 - i].to_be_bytes())).unwrap();
-        v[i * 8..(i + 1) * 8].copy_from_slice(&e);
-    });
-    v
-}
-
-pub fn is_create_contract(to: &str) -> bool {
-    // to: 0x00
-    if string_to_eth_address("0x00").eq(&string_to_eth_address(to)) {
-        true
-    } else {
-        false
-    }
 }
 
 
