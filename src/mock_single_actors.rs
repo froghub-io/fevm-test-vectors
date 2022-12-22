@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 
-use crate::state::State as EvmState;
+use crate::evm_state::State as EvmState;
 use crate::util::{
     is_create_contract, string_to_big_int, string_to_bytes, string_to_eth_address, string_to_i64,
     u256_to_bytes,

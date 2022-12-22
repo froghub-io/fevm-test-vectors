@@ -9,7 +9,7 @@ use std::{
 };
 use std::fs::File;
 use std::path::Path;
-use crate::{EvmContractBalance, EvmContractContext, EvmContractInput, EvmContractState};
+use crate::{EvmContractBalance, EvmContractContext, EvmContractInput, EvmContractState, EvmContractTransaction};
 
 const OP_SSTORE: &str = "SSTORE";
 const OP_SLOAD: &str = "SLOAD";
@@ -435,9 +435,12 @@ fn eth_tx_to_input(transaction: Transaction,
         });
     }
 
-    let mut transactions: Vec<String> = Vec::new();
+    let mut transactions: Vec<EvmContractTransaction> = Vec::new();
     for t in block.transactions {
-        transactions.push(match t.block_hash { Some(v) => h256_to_str(&v), None => String::from("00") });
+        transactions.push(EvmContractTransaction {
+            block_number: match t.block_number { Some(v) => v.as_u64(), None => 0 },
+            block_hash: match t.block_hash { Some(v) => h256_to_str(&v), None => String::from("00") }
+        });
     }
 
     let context: EvmContractContext = EvmContractContext {

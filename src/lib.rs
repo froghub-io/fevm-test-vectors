@@ -4,7 +4,7 @@ use crate::util::{
     compute_address_create, is_create_contract, string_to_big_int, string_to_bytes,
     string_to_eth_address, string_to_u256,
 };
-use crate::vector::RandomnessMatch;
+use crate::vector::{RandomnessMatch, TipsetCid};
 use crate::vector::RandomnessRule;
 use async_std::channel::bounded;
 use async_std::sync::RwLock;
@@ -22,7 +22,7 @@ use flate2::bufread::GzEncoder;
 use flate2::Compression;
 use fvm_ipld_blockstore::{Blockstore, MemoryBlockstore};
 use fvm_ipld_car::CarHeader;
-use fvm_ipld_encoding::CborStore;
+use fvm_ipld_encoding::{CborStore, DAG_CBOR};
 use fvm_ipld_encoding::RawBytes;
 use fvm_ipld_encoding::{BytesDe, BytesSer, Cbor};
 use fvm_ipld_hamt::Hamt;
@@ -36,7 +36,7 @@ use fvm_shared::message::Message;
 use fvm_shared::randomness::RANDOMNESS_LENGTH;
 use fvm_shared::receipt::Receipt;
 use fvm_shared::version::NetworkVersion;
-use fvm_shared::HAMT_BIT_WIDTH;
+use fvm_shared::{HAMT_BIT_WIDTH, IDENTITY_HASH};
 use mock_single_actors::to_message;
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
@@ -59,7 +59,7 @@ use vector::Variant;
 mod cidjson;
 pub mod extract_evm;
 pub mod mock_single_actors;
-pub mod state;
+pub mod evm_state;
 pub mod tracing_blockstore;
 pub mod util;
 mod vector;
@@ -110,23 +110,41 @@ pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> 
     };
     println!("receipt: {:?}", receipt);
 
-    // let (pre_state_root, post_state_root, message, receipt, bytes) = export(input).await;
+    // tipset_cids
+    let mut tipset_cids = Vec::new();
+    tipset_cids.push(TipsetCid {
+        epoch: input.context.block_number as ChainEpoch,
+        cid: Cid::new_v1(
+            DAG_CBOR,
+            multihash::Multihash::wrap(IDENTITY_HASH, &hex::decode(input.context.block_hash).unwrap()).unwrap(),
+        )
+    });
+    for t in input.transactions {
+        tipset_cids.push(TipsetCid {
+            epoch: t.block_number as ChainEpoch,
+            cid: Cid::new_v1(
+                DAG_CBOR,
+                multihash::Multihash::wrap(IDENTITY_HASH, &hex::decode(t.block_hash).unwrap()).unwrap(),
+            )
+        });
+    }
 
     const ENTROPY: &[u8] = b"prevrandao";
+    let block_difficulty_bytes = input.context.block_difficulty.to_be_bytes();
+    let mut ret = vec![0u8; 32];
+    ret[32 - block_difficulty_bytes.len()..32].copy_from_slice(&block_difficulty_bytes);
     let randomness = vec![RandomnessMatch {
         on: RandomnessRule {
             kind: vector::RandomnessKind::Beacon,
             dst: 10, //fil_actors_runtime::runtime::randomness::DomainSeparationTag::EvmPrevRandao as i64,
-            //TODO
-            epoch: 2383680,
+            epoch: input.context.block_number as ChainEpoch,
             entropy: Vec::from(ENTROPY),
         },
-        //TODO
-        ret: Vec::from([0u8; 32]),
+        ret,
     }];
     let variants = vec![Variant {
         id: String::from("test_evm"),
-        epoch: 2383680,
+        epoch: input.context.block_number as ChainEpoch,
         timestamp: Some(1671507767),
         nv: NetworkVersion::V18 as u32,
     }];
@@ -158,7 +176,7 @@ pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> 
         skip_compare_addresses: Some(vec![message.from]),
         skip_compare_actor_ids: Some(vec![REWARD_ACTOR_ID, BURNT_FUNDS_ACTOR_ID]),
         additional_compare_addresses: Some(contract_addrs),
-        tipset_cids: None,
+        tipset_cids: Some(tipset_cids),
         randomness,
     };
 
@@ -270,7 +288,7 @@ where
 pub struct EvmContractInput {
     pub states: HashMap<String, EvmContractState>,
     pub balances: HashMap<String, EvmContractBalance>,
-    pub transactions: Vec<String>,
+    pub transactions: Vec<EvmContractTransaction>,
     pub context: EvmContractContext,
 }
 
@@ -290,6 +308,7 @@ pub struct EvmContractBalance {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EvmContractTransaction {
+    pub block_number: u64,
     pub block_hash: String,
 }
 
