@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{BufWriter, Read};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 
 use async_std::channel::bounded;
 use async_std::sync::RwLock;
@@ -31,15 +31,17 @@ use fvm_shared::message::Message;
 use fvm_shared::randomness::RANDOMNESS_LENGTH;
 use fvm_shared::receipt::Receipt;
 use fvm_shared::version::NetworkVersion;
-use fvm_shared::{HAMT_BIT_WIDTH, IDENTITY_HASH};
-use mock_single_actors::to_message;
+use fvm_shared::{MethodNum, HAMT_BIT_WIDTH, IDENTITY_HASH, METHOD_SEND};
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
 use util::get_code_cid_map;
 use vector::{ApplyMessage, PreConditions, StateTreeVector, TestVector, Variant};
 
-use crate::mock_single_actors::Mock;
+use crate::mock_single_actors::{print_actor_state, Mock};
 use crate::tracing_blockstore::TracingBlockStore;
+use crate::types::{
+    ContractParams, CreateParams, EvmContractBalance, EvmContractContext, EvmContractInput,
+};
 use crate::util::{
     compute_address_create, is_create_contract, string_to_big_int, string_to_bytes,
     string_to_eth_address, string_to_u256,
@@ -51,8 +53,18 @@ pub mod evm_state;
 pub mod extract_evm;
 pub mod mock_single_actors;
 pub mod tracing_blockstore;
+pub mod types;
 pub mod util;
 mod vector;
+
+const LOG_INIT: Once = Once::new();
+
+#[inline(always)]
+pub fn init_log() {
+    LOG_INIT.call_once(|| {
+        fil_logger::init();
+    });
+}
 
 pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> anyhow::Result<()> {
     let actor_codes = get_code_cid_map()?;
@@ -98,7 +110,7 @@ pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> 
         gas_used: 0,
         events_root: None,
     };
-    println!("receipt: {:?}", receipt);
+    log::info!("receipt: {:?}", receipt);
 
     // tipset_cids
     let mut tipset_cids = Vec::new();
@@ -210,36 +222,41 @@ where
     let mut mock = Mock::new(store, actor_codes);
     mock.mock_builtin_actor();
 
-    let from = Address::new_delegated(EAM_ACTOR_ID, &string_to_eth_address(&input.context.from).0)
-        .unwrap();
-    let from_nonce = input.context.nonce;
-    mock.mock_embryo_address_actor(
-        from,
-        get_eth_addr_balance(&input.context.from, &input.balances, true),
-        from_nonce,
-    );
-
     // preconditions
+    let create_contract_eth_addr = if is_create_contract(&input.context.to) {
+        Some(compute_address_create(
+            &string_to_eth_address(&input.context.from),
+            input.context.nonce,
+        ))
+    } else {
+        None
+    };
+    for (k, v) in &input.balances {
+        let eth_addr = string_to_eth_address(&k);
+        let addr = Address::new_delegated(EAM_ACTOR_ID, &eth_addr.0).unwrap();
+        let balance = TokenAmount::from_atto(string_to_big_int(&v.pre_balance));
+        if eth_addr.eq(&string_to_eth_address(&input.context.from)) {
+            mock.mock_embryo_address_actor(addr, balance, input.context.nonce);
+            continue;
+        }
+        if let Some(create_contract_eth_addr) = create_contract_eth_addr {
+            if eth_addr.eq(&create_contract_eth_addr) {
+                continue;
+            }
+        }
+        mock.mock_evm_actor(addr, balance);
+    }
     for (eth_addr_str, state) in &input.states {
         let eth_addr = string_to_eth_address(&eth_addr_str);
         let to = Address::new_delegated(EAM_ACTOR_ID, &eth_addr.0).unwrap();
-        println!("mock eth_addr: {:?}", to.to_string());
 
         contract_addrs.push(to.clone());
 
-        if is_create_contract(&input.context.to)
-            && eth_addr.eq(&compute_address_create(
-                &string_to_eth_address(&input.context.from),
-                input.context.nonce,
-            ))
-        {
-            continue;
+        if let Some(create_contract_eth_addr) = create_contract_eth_addr {
+            if eth_addr.eq(&create_contract_eth_addr) {
+                continue;
+            }
         }
-        mock.mock_evm_actor(
-            to,
-            get_eth_addr_balance(eth_addr_str, &input.balances, true),
-        );
-
         let mut storage = HashMap::<U256, U256>::new();
         for (k, v) in &state.pre_storage {
             let key = string_to_u256(&k);
@@ -253,13 +270,25 @@ where
         mock.mock_evm_actor_state(&to, storage, bytecode)?;
     }
     let pre_state_root = mock.get_state_root();
-    println!("pre_state_root: {:?}", pre_state_root);
+    log::info!("pre_state_root: {:?}", pre_state_root);
+    print_actor_state(pre_state_root, &store)?;
 
     // postconditions
+    for (k, v) in &input.balances {
+        let eth_addr = string_to_eth_address(&k);
+        let addr = Address::new_delegated(EAM_ACTOR_ID, &eth_addr.0).unwrap();
+        let balance = TokenAmount::from_atto(string_to_big_int(&v.post_balance));
+        if let Some(create_contract_eth_addr) = create_contract_eth_addr {
+            if eth_addr.eq(&create_contract_eth_addr) {
+                mock.mock_evm_actor(addr, balance);
+                continue;
+            }
+        }
+        mock.mock_actor_balance(&addr, balance)?;
+    }
     for (eth_addr, state) in &input.states {
         let eth_addr = string_to_eth_address(&eth_addr);
         let to = Address::new_delegated(EAM_ACTOR_ID, &eth_addr.0).unwrap();
-        mock.mock_evm_actor(to, TokenAmount::zero());
         let mut storage = HashMap::<U256, U256>::new();
         for (k, v) in &state.post_storage {
             let key = string_to_u256(&k);
@@ -272,58 +301,46 @@ where
         };
         mock.mock_evm_actor_state(&to, storage, bytecode)?;
     }
-
     let post_state_root = mock.get_state_root();
-    println!("post_state_root: {:?}", post_state_root);
+    log::info!("post_state_root: {:?}", post_state_root);
+    print_actor_state(post_state_root, &store)?;
 
     return Ok((pre_state_root, post_state_root, contract_addrs));
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct EvmContractInput {
-    pub states: HashMap<String, EvmContractState>,
-    pub balances: HashMap<String, EvmContractBalance>,
-    pub transactions: Vec<EvmContractTransaction>,
-    pub context: EvmContractContext,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct EvmContractState {
-    pub pre_storage: HashMap<String, String>,
-    pub post_storage: HashMap<String, String>,
-    pub pre_code: Option<String>,
-    pub post_code: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct EvmContractBalance {
-    pub pre_balance: String,
-    pub post_balance: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct EvmContractTransaction {
-    pub block_number: u64,
-    pub block_hash: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct EvmContractContext {
-    pub chain_id: u64,
-    pub from: String,
-    pub to: String,
-    pub input: String,
-    pub value: String,
-    pub gas_limit: u64,
-    pub gas_price: String,
-    pub gas_fee_cap: String,
-    pub gas_tip_cap: String,
-    pub block_number: u64,
-    pub timestamp: usize,
-    pub nonce: u64,
-    pub block_hash: String,
-    pub block_difficulty: usize,
-    pub status: usize,
-    #[serde(alias = "return")]
-    pub return_result: String,
+pub fn to_message(context: &EvmContractContext) -> Message {
+    let from =
+        Address::new_delegated(EAM_ACTOR_ID, &string_to_eth_address(&context.from).0).unwrap();
+    let to: Address;
+    let method_num: MethodNum;
+    let mut params = RawBytes::from(vec![0u8; 0]);
+    if is_create_contract(&context.to) {
+        to = Address::new_id(10);
+        method_num = fil_actor_eam::Method::Create as u64;
+        let params2 = CreateParams {
+            initcode: string_to_bytes(&context.input),
+            nonce: context.nonce,
+        };
+        params = RawBytes::serialize(params2).unwrap();
+    } else {
+        to = Address::new_delegated(EAM_ACTOR_ID, &string_to_eth_address(&context.to).0).unwrap();
+        if context.input.len() > 0 {
+            params = RawBytes::serialize(ContractParams(string_to_bytes(&context.input))).unwrap();
+            method_num = fil_actor_evm::Method::InvokeContract as u64
+        } else {
+            method_num = METHOD_SEND;
+        }
+    }
+    Message {
+        version: 0,
+        from,
+        to,
+        sequence: context.nonce,
+        value: TokenAmount::from_atto(string_to_big_int(&context.value)),
+        method_num,
+        params,
+        gas_limit: context.gas_limit as i64,
+        gas_fee_cap: TokenAmount::from_atto(string_to_big_int(&context.gas_fee_cap)),
+        gas_premium: TokenAmount::from_atto(string_to_big_int(&context.gas_tip_cap)),
+    }
 }

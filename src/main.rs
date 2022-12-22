@@ -2,8 +2,8 @@ use std::fs::File;
 use std::path::Path;
 
 use clap::Parser;
-use fevm_test_vectors::export_test_vector_file;
 use fevm_test_vectors::extract_evm::run_extract;
+use fevm_test_vectors::{export_test_vector_file, init_log};
 
 #[derive(Parser, Debug)]
 #[clap(name = env!("CARGO_PKG_NAME"))]
@@ -24,6 +24,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    init_log();
     let cli = Cli::parse();
     let input = run_extract(cli.geth_rpc_endpoint, cli.tx_hash).await?;
     let path = Path::new(&cli.out).to_path_buf();

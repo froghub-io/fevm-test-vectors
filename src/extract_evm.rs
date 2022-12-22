@@ -9,7 +9,7 @@ use ethers::prelude::*;
 use ethers::providers::{Http, Middleware, Provider};
 use ethers::utils::get_contract_address;
 
-use crate::{
+use crate::types::{
     EvmContractBalance, EvmContractContext, EvmContractInput, EvmContractState,
     EvmContractTransaction,
 };
@@ -216,105 +216,105 @@ pub async fn run_extract(
         pre_balances.insert(*address, balance);
     }
 
-    for preceding_tx in block_transactions {
-        if preceding_tx.transaction_index == transaction.transaction_index {
-            break;
-        }
-
-        let from = transaction.from;
-        let to = match preceding_tx.to {
-            Some(to) => to,
-            None => get_contract_address(from, transaction.nonce),
-        };
-
-        if !preceding_tx.value.is_zero() {
-            if let Some(v) = pre_balances.get_mut(&from) {
-                *v -= preceding_tx.value;
-            }
-
-            if let Some(v) = pre_balances.get_mut(&from) {
-                *v += preceding_tx.value;
-            }
-        }
-
-        let mut execution_context = vec![to];
-
-        let trace = provider
-            .debug_trace_transaction(preceding_tx.hash, trace_options.clone())
-            .await
-            .unwrap();
-
-        let mut depth = 1u64;
-        for log in trace.struct_logs {
-            if depth < log.depth {
-                execution_context.pop();
-                depth -= 1;
-            }
-
-            match log.op.as_str() {
-                OP_CALL => {
-                    depth += 1;
-
-                    let stack = log.stack.unwrap();
-
-                    let callee = decode_address(stack[stack.len() - 2]);
-                    let caller = execution_context.last().unwrap();
-
-                    let value = stack[stack.len() - 3];
-
-                    if let Some(balance) = pre_balances.get_mut(caller) {
-                        *balance -= value;
-                    }
-
-                    if let Some(balance) = pre_balances.get_mut(&callee) {
-                        *balance -= value;
-                    }
-
-                    execution_context.push(callee);
-                }
-                OP_STATICCALL => {
-                    depth += 1;
-
-                    let stack = log.stack.unwrap();
-
-                    let address = decode_address(stack[stack.len() - 2]);
-
-                    execution_context.push(address);
-                }
-                OP_DELEGATECALL => {
-                    depth += 1;
-                    execution_context.push(*execution_context.last().unwrap());
-                }
-                OP_CALLCODE => {
-                    depth += 1;
-                    execution_context.push(*execution_context.last().unwrap());
-                }
-                OP_CREATE => {
-                    depth += 1;
-                    // TODO post-transaction state
-                    // FIXME
-                    execution_context.push(*execution_context.last().unwrap());
-                }
-                OP_CREATE2 => {
-                    depth += 1;
-                    // TODO
-                    // FIXME
-                    execution_context.push(*execution_context.last().unwrap());
-                }
-                OP_BALANCE => {
-                    let stack = log.stack.unwrap();
-
-                    let address = decode_address(stack[stack.len() - 1]);
-                    post_balances.entry(address).or_insert(U256::zero());
-                }
-                OP_SELFBALANCE => {
-                    let address = *execution_context.last().unwrap();
-                    post_balances.entry(address).or_insert(U256::zero());
-                }
-                _ => (),
-            }
-        }
-    }
+    // for preceding_tx in block_transactions {
+    //     if preceding_tx.transaction_index == transaction.transaction_index {
+    //         break;
+    //     }
+    //
+    //     let from = transaction.from;
+    //     let to = match preceding_tx.to {
+    //         Some(to) => to,
+    //         None => get_contract_address(from, transaction.nonce),
+    //     };
+    //
+    //     if !preceding_tx.value.is_zero() {
+    //         if let Some(v) = pre_balances.get_mut(&from) {
+    //             *v -= preceding_tx.value;
+    //         }
+    //
+    //         if let Some(v) = pre_balances.get_mut(&from) {
+    //             *v += preceding_tx.value;
+    //         }
+    //     }
+    //
+    //     let mut execution_context = vec![to];
+    //
+    //     let trace = provider
+    //         .debug_trace_transaction(preceding_tx.hash, trace_options.clone())
+    //         .await
+    //         .unwrap();
+    //
+    //     let mut depth = 1u64;
+    //     for log in trace.struct_logs {
+    //         if depth < log.depth {
+    //             execution_context.pop();
+    //             depth -= 1;
+    //         }
+    //
+    //         match log.op.as_str() {
+    //             OP_CALL => {
+    //                 depth += 1;
+    //
+    //                 let stack = log.stack.unwrap();
+    //
+    //                 let callee = decode_address(stack[stack.len() - 2]);
+    //                 let caller = execution_context.last().unwrap();
+    //
+    //                 let value = stack[stack.len() - 3];
+    //
+    //                 if let Some(balance) = pre_balances.get_mut(caller) {
+    //                     *balance -= value;
+    //                 }
+    //
+    //                 if let Some(balance) = pre_balances.get_mut(&callee) {
+    //                     *balance -= value;
+    //                 }
+    //
+    //                 execution_context.push(callee);
+    //             }
+    //             OP_STATICCALL => {
+    //                 depth += 1;
+    //
+    //                 let stack = log.stack.unwrap();
+    //
+    //                 let address = decode_address(stack[stack.len() - 2]);
+    //
+    //                 execution_context.push(address);
+    //             }
+    //             OP_DELEGATECALL => {
+    //                 depth += 1;
+    //                 execution_context.push(*execution_context.last().unwrap());
+    //             }
+    //             OP_CALLCODE => {
+    //                 depth += 1;
+    //                 execution_context.push(*execution_context.last().unwrap());
+    //             }
+    //             OP_CREATE => {
+    //                 depth += 1;
+    //                 // TODO post-transaction state
+    //                 // FIXME
+    //                 execution_context.push(*execution_context.last().unwrap());
+    //             }
+    //             OP_CREATE2 => {
+    //                 depth += 1;
+    //                 // TODO
+    //                 // FIXME
+    //                 execution_context.push(*execution_context.last().unwrap());
+    //             }
+    //             OP_BALANCE => {
+    //                 let stack = log.stack.unwrap();
+    //
+    //                 let address = decode_address(stack[stack.len() - 1]);
+    //                 post_balances.entry(address).or_insert(U256::zero());
+    //             }
+    //             OP_SELFBALANCE => {
+    //                 let address = *execution_context.last().unwrap();
+    //                 post_balances.entry(address).or_insert(U256::zero());
+    //             }
+    //             _ => (),
+    //         }
+    //     }
+    // }
 
     for (address, balance) in post_balances.iter_mut() {
         let pre_balance = pre_balances.get(address).unwrap();

@@ -1,10 +1,9 @@
 use std::path::Path;
 
-use fevm_test_vectors::mock_single_actors::{
-    print_actor_state, to_message, ContractParams, CreateParams,
-};
+use fevm_test_vectors::mock_single_actors::print_actor_state;
+use fevm_test_vectors::types::EvmContractInput;
 use fevm_test_vectors::util::{compute_address_create, is_create_contract, string_to_eth_address};
-use fevm_test_vectors::{export_test_vector_file, load_evm_contract_input, EvmContractInput};
+use fevm_test_vectors::{export_test_vector_file, init_log, load_evm_contract_input};
 use fil_actor_eam::EthAddress;
 use fvm_ipld_encoding::{from_slice, strict_bytes, BytesDe, Cbor, RawBytes};
 use serde::{Deserialize, Serialize};
@@ -38,12 +37,10 @@ fn from_slice_test() {
 
 #[async_std::test]
 async fn exec_export() {
+    init_log();
     let input: EvmContractInput =
-        serde_json::from_str(include_str!("contracts/contract3.json")).unwrap();
-    export_test_vector_file(
-        input,
-        Path::new("/Users/zhenghe/Downloads/constract3_test_vector.json").to_path_buf(),
-    )
-    .await
-    .unwrap();
+        serde_json::from_str(include_str!("contracts/contract.json")).unwrap();
+    export_test_vector_file(input, Path::new("test_vector.json").to_path_buf())
+        .await
+        .unwrap();
 }

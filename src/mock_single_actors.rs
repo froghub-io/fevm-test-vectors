@@ -29,12 +29,14 @@ use fvm_shared::error::ExitCode;
 use fvm_shared::message::Message;
 use fvm_shared::sector::StoragePower;
 use fvm_shared::{MethodNum, HAMT_BIT_WIDTH, IPLD_RAW, METHOD_SEND};
+use log::log;
 use multihash::{Code, MultihashGeneric};
 use num_traits::Zero;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::evm_state::State as EvmState;
+use crate::types::CreateParams;
 use crate::util::{
     is_create_contract, string_to_big_int, string_to_bytes, string_to_eth_address, string_to_i64,
     u256_to_bytes,
@@ -95,7 +97,7 @@ pub fn actor(
 }
 
 pub fn print_actor_state<BS: Blockstore>(state_root: Cid, store: &BS) -> anyhow::Result<()> {
-    println!("--- actor state ---");
+    log::info!("--- actor state ---");
     let actors = Hamt::<&BS, Actor>::load(&state_root, store)?;
     actors.for_each(|_, v| {
         let state_root = v.head;
@@ -104,6 +106,7 @@ pub fn print_actor_state<BS: Blockstore>(state_root: Cid, store: &BS) -> anyhow:
             Ok(res) => {
                 match res {
                     Some(state) => {
+                        log::info!("actor: {:?}", v);
                         if v.predictable_address.is_some() {
                             let delegated_addr = match v.predictable_address.unwrap().payload() {
                                 Payload::Delegated(delegated) if delegated.namespace() == EAM_ACTOR_ID => {
@@ -125,18 +128,17 @@ pub fn print_actor_state<BS: Blockstore>(state_root: Cid, store: &BS) -> anyhow:
                                 })?;
                                 EthAddress(subaddr)
                             };
-                            println!("eth_addr: {:?}", hex::encode(receiver_eth_addr.0));
+                            log::info!("eth_addr: {:?}", hex::encode(receiver_eth_addr.0));
                         }
                         let bytecode = store
                             .get(&state.bytecode)
                             .context_code(ExitCode::USR_NOT_FOUND, "failed to read bytecode")?
                             .expect("bytecode not in state tree");
-                        println!("bytecode: {:?}", hex::encode(bytecode));
+                        log::debug!("bytecode: {:?}", hex::encode(bytecode));
                         let slots = StateKamt::load_with_config(&state.contract_state, store, KAMT_CONFIG.clone())
                             .context_code(ExitCode::USR_ILLEGAL_STATE, "state not in blockstore")?;
                         slots.for_each(|k, v| {
-                                println!("--k: {:?}", hex::encode(u256_to_bytes(k)));
-                                println!("--v: {:?}", hex::encode(u256_to_bytes(v)));
+                            log::info!("{:?}: {:?}", hex::encode(u256_to_bytes(k)), hex::encode(u256_to_bytes(v)));
                                 Ok(())
                             })?;
                     },
@@ -147,6 +149,7 @@ pub fn print_actor_state<BS: Blockstore>(state_root: Cid, store: &BS) -> anyhow:
         }
         Ok(())
     })?;
+    log::info!("\n");
     Ok(())
 }
 
@@ -324,6 +327,9 @@ where
         storage: HashMap<U256, U256>,
         bytecode: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
+        if storage.len() == 0 && bytecode.is_none() {
+            return Ok(());
+        }
         let addr = self
             .normalize_address(addr)
             .expect("failed to normalize address");
@@ -449,14 +455,30 @@ where
         Ok(())
     }
 
+    pub fn mock_actor_balance(
+        &mut self,
+        addr: &Address,
+        balance: TokenAmount,
+    ) -> anyhow::Result<()> {
+        let addr = self
+            .normalize_address(addr)
+            .expect("failed to normalize address");
+        let mut a = self.get_actor(addr).unwrap();
+        if !a.balance.eq(&balance) {
+            a.balance = balance;
+            self.set_actor(addr, a);
+        }
+        Ok(())
+    }
+
     pub fn get_state_root(&self) -> Cid {
         let cid: &Cid = &self.state_root.borrow();
         cid.clone()
     }
 
     pub fn put_store<S>(&self, obj: &S) -> Cid
-    where
-        S: serde::ser::Serialize,
+        where
+            S: serde::ser::Serialize,
     {
         self.store.put_cbor(obj, Code::Blake2b256).unwrap()
     }
@@ -512,55 +534,3 @@ where
         self.actor_codes.get(&actor_type).unwrap().clone()
     }
 }
-
-pub fn to_message(context: &EvmContractContext) -> Message {
-    let from =
-        Address::new_delegated(EAM_ACTOR_ID, &string_to_eth_address(&context.from).0).unwrap();
-    let to: Address;
-    let method_num: MethodNum;
-    let mut params = RawBytes::from(vec![0u8; 0]);
-    if is_create_contract(&context.to) {
-        to = Address::new_id(10);
-        method_num = fil_actor_eam::Method::Create as u64;
-        let params2 = CreateParams {
-            initcode: string_to_bytes(&context.input),
-            nonce: context.nonce,
-        };
-        params = RawBytes::serialize(params2).unwrap();
-    } else {
-        to = Address::new_delegated(EAM_ACTOR_ID, &string_to_eth_address(&context.to).0).unwrap();
-        if context.input.len() > 0 {
-            params = RawBytes::serialize(ContractParams(string_to_bytes(&context.input))).unwrap();
-            method_num = fil_actor_evm::Method::InvokeContract as u64
-        } else {
-            method_num = METHOD_SEND;
-        }
-    }
-    Message {
-        version: 0,
-        from,
-        to,
-        sequence: context.nonce,
-        value: TokenAmount::from_atto(string_to_big_int(&context.value)),
-        method_num,
-        params,
-        gas_limit: context.gas_limit as i64,
-        gas_fee_cap: TokenAmount::from_atto(string_to_big_int(&context.gas_fee_cap)),
-        gas_premium: TokenAmount::from_atto(string_to_big_int(&context.gas_tip_cap)),
-    }
-}
-
-#[derive(Serialize_tuple, Deserialize_tuple)]
-pub struct CreateParams {
-    #[serde(with = "strict_bytes")]
-    pub initcode: Vec<u8>,
-    pub nonce: u64,
-}
-
-impl Cbor for CreateParams {}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(transparent)]
-pub struct ContractParams(#[serde(with = "strict_bytes")] pub Vec<u8>);
-
-impl Cbor for ContractParams {}
