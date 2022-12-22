@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::path::Path;
+
 use clap::Parser;
 use fevm_test_vectors::export_test_vector_file;
 use fevm_test_vectors::extract_evm::run_extract;
@@ -36,9 +37,6 @@ async fn main() -> anyhow::Result<()> {
     //     None => {}
     // }
     println!("test_vector_path: {:?}", path);
-    export_test_vector_file(
-        input,
-        path,
-    ).await?;
+    export_test_vector_file(input, path).await?;
     Ok(())
 }

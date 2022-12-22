@@ -1,6 +1,9 @@
 use cid::Cid;
 use fvm_ipld_encoding::tuple::*;
-use fvm_shared::{address::Address, clock::ChainEpoch, receipt::Receipt, ActorID};
+use fvm_shared::address::Address;
+use fvm_shared::clock::ChainEpoch;
+use fvm_shared::receipt::Receipt;
+use fvm_shared::ActorID;
 use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

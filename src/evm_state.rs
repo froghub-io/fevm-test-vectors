@@ -1,9 +1,7 @@
-use {
-    cid::Cid,
-    fvm_ipld_encoding::tuple::*,
-    fvm_ipld_encoding::Cbor,
-    serde_tuple::{Deserialize_tuple, Serialize_tuple},
-};
+use cid::Cid;
+use fvm_ipld_encoding::tuple::*;
+use fvm_ipld_encoding::Cbor;
+use serde_tuple::{Deserialize_tuple, Serialize_tuple};
 
 /// Data stored by an EVM contract.
 /// This runs on the fvm-evm-runtime actor code cid.

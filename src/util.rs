@@ -3,13 +3,13 @@ use std::collections::BTreeMap;
 use anyhow::{anyhow, Context};
 use async_std::task::block_on;
 use fil_actor_evm::interpreter::instructions::bitwise::byte;
+use fil_actors_runtime::runtime::builtins::Type;
 use fvm_ipld_car::load_car_unchecked;
 use fvm_ipld_encoding::CborStore;
 use fvm_shared::version::NetworkVersion;
 use num_traits::FromPrimitive;
 
 use crate::*;
-use fil_actors_runtime::runtime::builtins::Type;
 
 pub fn get_code_cid_map() -> anyhow::Result<BTreeMap<Type, Cid>> {
     let bs = MemoryBlockstore::new();
@@ -18,8 +18,9 @@ pub fn get_code_cid_map() -> anyhow::Result<BTreeMap<Type, Cid>> {
     assert_eq!(roots.len(), 1);
 
     let manifest_cid = roots[0];
-    let (_, builtin_actors_cid): (u32, Cid) =
-        bs.get_cbor(&manifest_cid)?.context("failed to load actor manifest")?;
+    let (_, builtin_actors_cid): (u32, Cid) = bs
+        .get_cbor(&manifest_cid)?
+        .context("failed to load actor manifest")?;
 
     let vec: Vec<(String, Cid)> = match bs.get_cbor(&builtin_actors_cid)? {
         Some(vec) => vec,
@@ -43,7 +44,9 @@ pub fn compute_address_create(from: &EthAddress, nonce: u64) -> EthAddress {
 }
 
 pub fn hash_20(data: &[u8]) -> [u8; 20] {
-    hash(SupportedHashes::Keccak256, data)[12..32].try_into().unwrap()
+    hash(SupportedHashes::Keccak256, data)[12..32]
+        .try_into()
+        .unwrap()
 }
 
 pub fn hash(hasher: SupportedHashes, data: &[u8]) -> Vec<u8> {
@@ -63,7 +66,7 @@ pub fn string_to_i64(str: &str) -> i64 {
     let v = string_to_bytes(str);
     if v.len() > 8 {
         let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&v[v.len()-8..v.len()]);
+        bytes.copy_from_slice(&v[v.len() - 8..v.len()]);
         i64::from_str(&*hex::encode(bytes)).unwrap()
     } else {
         i64::from_str(&*hex::encode(v)).unwrap()
@@ -75,14 +78,12 @@ pub fn string_to_big_int(str: &str) -> BigInt {
     let mut i = 0;
     while i < v.len() {
         match BigInt::from_str(&*hex::encode(&v[i..])) {
-            Ok(v) => {
-                return v
-            },
+            Ok(v) => return v,
             Err(_) => {}
         }
         i += 2;
     }
-    return BigInt::zero()
+    return BigInt::zero();
 }
 
 pub fn string_to_eth_address(str: &str) -> EthAddress {
@@ -102,7 +103,7 @@ pub fn string_to_bytes(str: &str) -> Vec<u8> {
         } else {
             str.to_string()
         })
-            .unwrap()
+        .unwrap()
     } else {
         hex::decode(if str.len().is_odd() {
             let mut s = String::from("0");
@@ -111,7 +112,7 @@ pub fn string_to_bytes(str: &str) -> Vec<u8> {
         } else {
             str.to_string()
         })
-            .unwrap()
+        .unwrap()
     }
 }
 

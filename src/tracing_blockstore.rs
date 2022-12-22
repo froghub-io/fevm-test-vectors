@@ -1,4 +1,5 @@
-use std::{cell::RefCell, collections::HashSet};
+use std::cell::RefCell;
+use std::collections::HashSet;
 
 use anyhow::Result;
 use cid::Cid;
@@ -15,7 +16,10 @@ where
     BS: Blockstore,
 {
     pub fn new(base: BS) -> Self {
-        Self { base, traced: Default::default() }
+        Self {
+            base,
+            traced: Default::default(),
+        }
     }
 }
 

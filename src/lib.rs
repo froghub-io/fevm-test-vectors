@@ -1,30 +1,25 @@
-use crate::mock_single_actors::Mock;
-use crate::tracing_blockstore::TracingBlockStore;
-use crate::util::{
-    compute_address_create, is_create_contract, string_to_big_int, string_to_bytes,
-    string_to_eth_address, string_to_u256,
-};
-use crate::vector::{RandomnessMatch, TipsetCid};
-use crate::vector::RandomnessRule;
+use std::collections::{BTreeMap, HashMap};
+use std::fs::File;
+use std::io::{BufWriter, Read};
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::sync::Arc;
+
 use async_std::channel::bounded;
 use async_std::sync::RwLock;
 use bytes::Buf;
-use cid::multihash::Code;
-use cid::multihash::MultihashDigest;
+use cid::multihash::{Code, MultihashDigest};
 use cid::Cid;
 use fil_actor_eam::EthAddress;
 use fil_actor_evm::interpreter::U256;
 use fil_actors_runtime::runtime::builtins::Type;
 use fil_actors_runtime::runtime::EMPTY_ARR_CID;
-use fil_actors_runtime::REWARD_ACTOR_ID;
-use fil_actors_runtime::{BURNT_FUNDS_ACTOR_ID, EAM_ACTOR_ID};
+use fil_actors_runtime::{BURNT_FUNDS_ACTOR_ID, EAM_ACTOR_ID, REWARD_ACTOR_ID};
 use flate2::bufread::GzEncoder;
 use flate2::Compression;
 use fvm_ipld_blockstore::{Blockstore, MemoryBlockstore};
 use fvm_ipld_car::CarHeader;
-use fvm_ipld_encoding::{CborStore, DAG_CBOR};
-use fvm_ipld_encoding::RawBytes;
-use fvm_ipld_encoding::{BytesDe, BytesSer, Cbor};
+use fvm_ipld_encoding::{BytesDe, BytesSer, Cbor, CborStore, RawBytes, DAG_CBOR};
 use fvm_ipld_hamt::Hamt;
 use fvm_shared::address::Address;
 use fvm_shared::bigint::{BigInt, Integer};
@@ -40,26 +35,21 @@ use fvm_shared::{HAMT_BIT_WIDTH, IDENTITY_HASH};
 use mock_single_actors::to_message;
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::BufWriter;
-use std::io::Read;
-use std::path::Path;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::Arc;
 use util::get_code_cid_map;
-use vector::ApplyMessage;
-use vector::PreConditions;
-use vector::StateTreeVector;
-use vector::TestVector;
-use vector::Variant;
+use vector::{ApplyMessage, PreConditions, StateTreeVector, TestVector, Variant};
+
+use crate::mock_single_actors::Mock;
+use crate::tracing_blockstore::TracingBlockStore;
+use crate::util::{
+    compute_address_create, is_create_contract, string_to_big_int, string_to_bytes,
+    string_to_eth_address, string_to_u256,
+};
+use crate::vector::{RandomnessMatch, RandomnessRule, TipsetCid};
 
 mod cidjson;
+pub mod evm_state;
 pub mod extract_evm;
 pub mod mock_single_actors;
-pub mod evm_state;
 pub mod tracing_blockstore;
 pub mod util;
 mod vector;
@@ -116,16 +106,21 @@ pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> 
         epoch: input.context.block_number as ChainEpoch,
         cid: Cid::new_v1(
             DAG_CBOR,
-            multihash::Multihash::wrap(IDENTITY_HASH, &hex::decode(input.context.block_hash).unwrap()).unwrap(),
-        )
+            multihash::Multihash::wrap(
+                IDENTITY_HASH,
+                &hex::decode(input.context.block_hash).unwrap(),
+            )
+            .unwrap(),
+        ),
     });
     for t in input.transactions {
         tipset_cids.push(TipsetCid {
             epoch: t.block_number as ChainEpoch,
             cid: Cid::new_v1(
                 DAG_CBOR,
-                multihash::Multihash::wrap(IDENTITY_HASH, &hex::decode(t.block_hash).unwrap()).unwrap(),
-            )
+                multihash::Multihash::wrap(IDENTITY_HASH, &hex::decode(t.block_hash).unwrap())
+                    .unwrap(),
+            ),
         });
     }
 

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use fevm_test_vectors::mock_single_actors::{
     print_actor_state, to_message, ContractParams, CreateParams,
 };
@@ -7,7 +9,6 @@ use fil_actor_eam::EthAddress;
 use fvm_ipld_encoding::{from_slice, strict_bytes, BytesDe, Cbor, RawBytes};
 use serde::{Deserialize, Serialize};
 use serde_tuple::*;
-use std::path::Path;
 
 #[test]
 fn evm_create_test() {

@@ -1,15 +1,18 @@
+use std::collections::{BTreeMap, HashMap};
+use std::convert::TryFrom;
+use std::fs::File;
+use std::path::Path;
+use std::str::FromStr;
+
 use clap::Parser;
 use ethers::prelude::*;
 use ethers::providers::{Http, Middleware, Provider};
 use ethers::utils::get_contract_address;
-use std::str::FromStr;
-use std::{
-    collections::{BTreeMap, HashMap},
-    convert::TryFrom,
+
+use crate::{
+    EvmContractBalance, EvmContractContext, EvmContractInput, EvmContractState,
+    EvmContractTransaction,
 };
-use std::fs::File;
-use std::path::Path;
-use crate::{EvmContractBalance, EvmContractContext, EvmContractInput, EvmContractState, EvmContractTransaction};
 
 const OP_SSTORE: &str = "SSTORE";
 const OP_SLOAD: &str = "SLOAD";
@@ -25,12 +28,14 @@ const OP_SELFBALANCE: &str = "SELFBALANCE";
 const OP_CREATE: &str = "CREATE";
 const OP_CREATE2: &str = "CREATE2";
 
-
-pub async fn run_extract(geth_rpc_endpoint: String, tx_hash: String) -> anyhow::Result<EvmContractInput> {
+pub async fn run_extract(
+    geth_rpc_endpoint: String,
+    tx_hash: String,
+) -> anyhow::Result<EvmContractInput> {
     let tx_hash = H256::from_str(&tx_hash)?;
 
-    let provider = Provider::<Http>::try_from(geth_rpc_endpoint)
-        .expect("could not instantiate HTTP Provider");
+    let provider =
+        Provider::<Http>::try_from(geth_rpc_endpoint).expect("could not instantiate HTTP Provider");
 
     let transaction = provider.get_transaction(tx_hash).await?.unwrap();
 
@@ -320,19 +325,21 @@ pub async fn run_extract(geth_rpc_endpoint: String, tx_hash: String) -> anyhow::
         }
     }
 
-    let status =  if transaction_trace.failed { 0 } else { 1 };
+    let status = if transaction_trace.failed { 0 } else { 1 };
     let return_result = hex::encode(transaction_trace.return_value.to_vec());
 
-    let input = eth_tx_to_input(transaction,
-                                block,
-                                pre_storages,
-                                post_storages,
-                                pre_balances,
-                                post_balances,
-                                pre_codes,
-                                post_codes,
-                                status,
-                                return_result);
+    let input = eth_tx_to_input(
+        transaction,
+        block,
+        pre_storages,
+        post_storages,
+        pre_balances,
+        post_balances,
+        pre_codes,
+        post_codes,
+        status,
+        return_result,
+    );
     Ok(input)
 }
 
@@ -342,8 +349,7 @@ fn decode_address(raw_address: U256) -> H160 {
     H160::from_slice(&bytes[12..])
 }
 
-
-fn push_adds<T>(adds: &mut Vec<Address> ,bmap: &BTreeMap<Address, T>) {
+fn push_adds<T>(adds: &mut Vec<Address>, bmap: &BTreeMap<Address, T>) {
     bmap.keys().for_each(|addr| {
         if !adds.contains(addr) {
             adds.push(addr.clone());
@@ -351,7 +357,10 @@ fn push_adds<T>(adds: &mut Vec<Address> ,bmap: &BTreeMap<Address, T>) {
     });
 }
 
-fn get_storage(addr: &Address, storages: &BTreeMap<Address, HashMap<U256, U256>>) -> HashMap<String, String> {
+fn get_storage(
+    addr: &Address,
+    storages: &BTreeMap<Address, HashMap<U256, U256>>,
+) -> HashMap<String, String> {
     let bmap = storages.get(&addr);
     let mut vmap = HashMap::new();
     if let Some(bmap) = bmap {
@@ -365,23 +374,21 @@ fn get_storage(addr: &Address, storages: &BTreeMap<Address, HashMap<U256, U256>>
 fn get_balance(addr: &Address, balances: &BTreeMap<Address, U256>) -> String {
     match balances.get(&addr) {
         Some(v) => u256_to_str(v),
-        None => String::from("00")
+        None => String::from("00"),
     }
 }
 
 fn get_code(addr: &Address, codes: &BTreeMap<Address, Bytes>) -> Option<String> {
     match codes.get(&addr) {
-        Some(v) => {
-            Some(hex::encode(v.to_vec()))
-        },
-        None => None
+        Some(v) => Some(hex::encode(v.to_vec())),
+        None => None,
     }
 }
 
 fn get_eth_addr(addr: Option<Address>) -> String {
     match addr {
         Some(addr) => hex::encode(addr.0),
-        None => String::from("0x00")
+        None => String::from("0x00"),
     }
 }
 
@@ -395,16 +402,18 @@ fn h256_to_str(v: &H256) -> String {
     hex::encode(v.0)
 }
 
-fn eth_tx_to_input(transaction: Transaction,
-                   block: Block<Transaction>,
-                   pre_storages: BTreeMap<Address, HashMap<U256, U256>>,
-                   post_storages: BTreeMap<Address, HashMap<U256, U256>>,
-                   pre_balances: BTreeMap<Address, U256>,
-                   post_balances: BTreeMap<Address, U256>,
-                   pre_codes: BTreeMap<Address, Bytes>,
-                   post_codes: BTreeMap<Address, Bytes>,
-                   status: usize,
-                   return_result: String) -> EvmContractInput {
+fn eth_tx_to_input(
+    transaction: Transaction,
+    block: Block<Transaction>,
+    pre_storages: BTreeMap<Address, HashMap<U256, U256>>,
+    post_storages: BTreeMap<Address, HashMap<U256, U256>>,
+    pre_balances: BTreeMap<Address, U256>,
+    post_balances: BTreeMap<Address, U256>,
+    pre_codes: BTreeMap<Address, Bytes>,
+    post_codes: BTreeMap<Address, Bytes>,
+    status: usize,
+    return_result: String,
+) -> EvmContractInput {
     let mut adds: Vec<Address> = Vec::new();
     push_adds(&mut adds, &pre_storages);
     push_adds(&mut adds, &post_storages);
@@ -423,49 +432,79 @@ fn eth_tx_to_input(transaction: Transaction,
         let post_balance = get_balance(&addr, &post_balances);
         let pre_code = get_code(&addr, &pre_codes);
         let post_code = get_code(&addr, &post_codes);
-        states.insert(eth_addr.clone(), EvmContractState {
-            pre_storage,
-            post_storage,
-            pre_code,
-            post_code
-        });
-        balances.insert(eth_addr, EvmContractBalance {
-            pre_balance,
-            post_balance
-        });
+        states.insert(
+            eth_addr.clone(),
+            EvmContractState {
+                pre_storage,
+                post_storage,
+                pre_code,
+                post_code,
+            },
+        );
+        balances.insert(
+            eth_addr,
+            EvmContractBalance {
+                pre_balance,
+                post_balance,
+            },
+        );
     }
 
     let mut transactions: Vec<EvmContractTransaction> = Vec::new();
     for t in block.transactions {
         transactions.push(EvmContractTransaction {
-            block_number: match t.block_number { Some(v) => v.as_u64(), None => 0 },
-            block_hash: match t.block_hash { Some(v) => h256_to_str(&v), None => String::from("00") }
+            block_number: match t.block_number {
+                Some(v) => v.as_u64(),
+                None => 0,
+            },
+            block_hash: match t.block_hash {
+                Some(v) => h256_to_str(&v),
+                None => String::from("00"),
+            },
         });
     }
 
     let context: EvmContractContext = EvmContractContext {
-        chain_id: match transaction.chain_id { Some(v) => v.as_u64(), None => 0 },
+        chain_id: match transaction.chain_id {
+            Some(v) => v.as_u64(),
+            None => 0,
+        },
         from: get_eth_addr(Some(transaction.from)),
         to: get_eth_addr(transaction.to),
         input: hex::encode(transaction.input.to_vec()),
         value: u256_to_str(&transaction.value),
-        gas_price: match transaction.gas_price { Some(v) => u256_to_str(&v), None => String::from("00") },
+        gas_price: match transaction.gas_price {
+            Some(v) => u256_to_str(&v),
+            None => String::from("00"),
+        },
         gas_limit: transaction.gas.as_u64(),
-        gas_fee_cap: match transaction.max_fee_per_gas { Some(v) => u256_to_str(&v), None => String::from("00") },
-        gas_tip_cap: match transaction.max_priority_fee_per_gas { Some(v) => u256_to_str(&v), None => String::from("00") },
-        block_number: match transaction.block_number { Some(v) => v.as_u64(), None => 0 },
+        gas_fee_cap: match transaction.max_fee_per_gas {
+            Some(v) => u256_to_str(&v),
+            None => String::from("00"),
+        },
+        gas_tip_cap: match transaction.max_priority_fee_per_gas {
+            Some(v) => u256_to_str(&v),
+            None => String::from("00"),
+        },
+        block_number: match transaction.block_number {
+            Some(v) => v.as_u64(),
+            None => 0,
+        },
         timestamp: block.timestamp.as_usize(),
         nonce: transaction.nonce.as_u64(),
-        block_hash: match transaction.block_hash { Some(v) => h256_to_str(&v), None => String::from("00") },
+        block_hash: match transaction.block_hash {
+            Some(v) => h256_to_str(&v),
+            None => String::from("00"),
+        },
         block_difficulty: block.difficulty.as_usize(),
         status,
-        return_result
+        return_result,
     };
 
     EvmContractInput {
         states,
         balances,
         transactions,
-        context
+        context,
     }
 }
