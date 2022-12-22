@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::path::Path;
 use clap::Parser;
 use fevm_test_vectors::export_test_vector_file;
@@ -24,9 +25,20 @@ struct Cli {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let input = run_extract(cli.geth_rpc_endpoint, cli.tx_hash).await?;
+    let path = Path::new(&cli.out).to_path_buf();
+    match path.parent() {
+        Some(dir) => {
+            let contract_path =  dir.join("contract.json");
+            println!("contract_path: {:?}", contract_path);
+            let output = File::create(&contract_path)?;
+            serde_json::to_writer_pretty(output, &input)?;
+        },
+        None => {}
+    }
+    println!("test_vector_path: {:?}", path);
     export_test_vector_file(
         input,
-        Path::new(&cli.out).to_path_buf(),
+        path,
     ).await?;
     Ok(())
 }

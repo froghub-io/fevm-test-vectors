@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{anyhow, Context};
 use async_std::task::block_on;
+use fil_actor_evm::interpreter::instructions::bitwise::byte;
 use fvm_ipld_car::load_car_unchecked;
 use fvm_ipld_encoding::CborStore;
 use fvm_shared::version::NetworkVersion;
@@ -60,12 +61,28 @@ pub fn string_to_u256(str: &str) -> U256 {
 
 pub fn string_to_i64(str: &str) -> i64 {
     let v = string_to_bytes(str);
-    i64::from_str(&*hex::encode(v)).unwrap()
+    if v.len() > 8 {
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&v[v.len()-8..v.len()]);
+        i64::from_str(&*hex::encode(bytes)).unwrap()
+    } else {
+        i64::from_str(&*hex::encode(v)).unwrap()
+    }
 }
 
 pub fn string_to_big_int(str: &str) -> BigInt {
     let v = string_to_bytes(str);
-    BigInt::from_str(&*hex::encode(v)).unwrap()
+    let mut i = 0;
+    while i < v.len() {
+        match BigInt::from_str(&*hex::encode(&v[i..])) {
+            Ok(v) => {
+                return v
+            },
+            Err(_) => {}
+        }
+        i += 2;
+    }
+    return BigInt::zero()
 }
 
 pub fn string_to_eth_address(str: &str) -> EthAddress {
