@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_tuple::*;
 use std::path::Path;
 use fevm_test_vectors::mock_single_actors::{ContractParams, CreateParams, print_actor_state, to_message};
-use fevm_test_vectors::{compute_address_create, is_create_contract, string_to_eth_address, EvmContractInput};
-use fevm_test_vectors::{export_test_vector_file, load_evm_contract_input};
+use fevm_test_vectors::util::{compute_address_create, is_create_contract, string_to_eth_address};
+use fevm_test_vectors::{EvmContractInput, export_test_vector_file, load_evm_contract_input};
 
 #[test]
 fn evm_create_test() {
