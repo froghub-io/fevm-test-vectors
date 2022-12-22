@@ -392,15 +392,6 @@ where
         self.store.put_cbor(obj, Code::Blake2b256).unwrap()
     }
 
-    // pub fn get_state<C: Cbor>(&self, addr: Address) -> Option<C> {
-    //     let a_opt = self.get_actor(addr);
-    //     if a_opt == None {
-    //         return None;
-    //     };
-    //     let a = a_opt.unwrap();
-    //     self.store.get_cbor::<C>(&a.head).unwrap()
-    // }
-
     pub fn get_state<T: DeserializeOwned>(&self, addr: Address) -> Option<T> {
         let a_opt = self.get_actor(addr);
         if a_opt == None {
@@ -411,13 +402,13 @@ where
     }
 
     pub fn set_actor(&mut self, actor_addr: Address, actor: Actor) -> () {
-        let mut actors = Hamt::<&BS, Actor>::load(&self.state_root.borrow(), self.store).unwrap();
+        let mut actors = Hamt::<&BS, Actor>::load_with_bit_width(&self.state_root.borrow(), self.store, HAMT_BIT_WIDTH).unwrap();
         actors.set(actor_addr.to_bytes().into(), actor).unwrap();
         self.state_root.replace(actors.flush().unwrap());
     }
 
     pub fn get_actor(&self, addr: Address) -> Option<Actor> {
-        let actors = Hamt::<&BS, Actor>::load(&self.state_root.borrow(), self.store).unwrap();
+        let actors = Hamt::<&BS, Actor>::load_with_bit_width(&self.state_root.borrow(), self.store, HAMT_BIT_WIDTH).unwrap();
         actors.get(&addr.to_bytes()).unwrap().cloned()
     }
 
