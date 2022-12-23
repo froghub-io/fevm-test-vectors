@@ -432,15 +432,17 @@ fn eth_tx_to_input(
         let post_balance = get_balance(&addr, &post_balances);
         let pre_code = get_code(&addr, &pre_codes);
         let post_code = get_code(&addr, &post_codes);
-        states.insert(
-            eth_addr.clone(),
-            EvmContractState {
-                pre_storage,
-                post_storage,
-                pre_code,
-                post_code,
-            },
-        );
+        if !addr.eq(&transaction.from) {
+            states.insert(
+                eth_addr.clone(),
+                EvmContractState {
+                    pre_storage,
+                    post_storage,
+                    pre_code,
+                    post_code,
+                },
+            );
+        }
         balances.insert(
             eth_addr,
             EvmContractBalance {
