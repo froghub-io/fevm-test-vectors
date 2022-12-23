@@ -15,10 +15,10 @@ use crate::types::{
 };
 
 pub async fn extract_transaction(
-    hash: String,
-    geth_rpc_endpoint: String,
+    hash: &str,
+    geth_rpc_endpoint: &str,
 ) -> anyhow::Result<EvmContractInput> {
-    let tx_hash = H256::from_str(&hash)?;
+    let tx_hash = H256::from_str(hash)?;
 
     let provider =
         Provider::<Http>::try_from(geth_rpc_endpoint).expect("could not instantiate HTTP Provider");
@@ -30,10 +30,6 @@ pub async fn extract_transaction(
         .get_block_with_txs(transaction.block_hash.unwrap())
         .await?
         .unwrap();
-
-    let prev_block_number = block.number.unwrap() - 1;
-
-    let block_transactions = block.transactions.clone();
 
     let tx_from = transaction.from;
     let tx_contract_address = transaction
@@ -78,7 +74,7 @@ pub async fn extract_transaction(
     }
     post_codes.insert(tx_contract_address, code);
 
-    // transaction value transfer, shoud be placed after
+    // transaction value transfer
     post_balances.insert(tx_contract_address, transaction.value);
     post_balances_negative.insert(tx_from, transaction.value);
 
@@ -144,7 +140,7 @@ pub async fn extract_transaction(
 
                 let value = stack[stack.len() - 3];
                 let next_log = transaction_trace.struct_logs[i + 1].clone();
-                // In some cases, e.g. insufficient balance, the call will fail without error
+                // In some cases, e.g. insufficient balance for transfer, the call will fail without error
                 // or "revert" opcode in trace logs.
                 let failed = next_log.depth == log.depth;
                 if !value.is_zero() && !failed {
@@ -243,7 +239,7 @@ pub async fn extract_transaction(
 
                 let value = stack[stack.len() - 1];
                 let next_log = transaction_trace.struct_logs[i + 1].clone();
-                // In some cases, e.g. insufficient balance, the call will fail without error.
+                // In some cases, e.g. insufficient balance for transfer, the call will fail without error.
                 let failed = next_log.depth == log.depth;
                 if !value.is_zero() && !failed {
                     pre_balances.insert(address, U256::zero());
@@ -288,7 +284,7 @@ pub async fn extract_transaction(
 
                 let value = stack[stack.len() - 1];
                 let next_log = transaction_trace.struct_logs[i + 1].clone();
-                // In some cases, e.g. insufficient balance, the call will fail without error.
+                // In some cases, e.g. insufficient balance for transfer, the call will fail without error.
                 let failed = next_log.depth == log.depth;
                 if !value.is_zero() && !failed {
                     pre_balances.insert(address, U256::zero());
@@ -396,212 +392,13 @@ pub async fn extract_transaction(
         i += 1;
     }
 
-    // Since we can't get accurate balance just before the tx executing from ethereum JSON RPC directly,
-    // we need first get accounts balances at previous block and then trace the preceding txs on the same block
-    // for value transfer between those accounts.
-    for (address, value) in pre_balances.iter_mut() {
-        let balance = provider
-            .get_balance(*address, Some(prev_block_number.into()))
-            .await
-            .unwrap();
-        *value = balance;
-    }
-
-    for preceding_tx in block_transactions {
-        if preceding_tx.transaction_index == transaction.transaction_index {
-            break;
-        }
-
-        let receipt = provider
-            .get_transaction_receipt(preceding_tx.hash)
-            .await?
-            .unwrap();
-
-        // gas fee
-        if let Some(balance) = pre_balances.get_mut(&preceding_tx.from) {
-            // calculate gas fee
-            let gas_used = receipt.gas_used.unwrap();
-            let gas_price = match receipt.effective_gas_price {
-                Some(effective_gas_price) => effective_gas_price,
-                None => preceding_tx.gas_price.unwrap(),
-            };
-            let gas_fee = gas_used * gas_price;
-
-            *balance -= gas_fee;
-        }
-
-        if let Some(status) = receipt.status {
-            if status == 0.into() {
-                // skip failed tx
-                continue;
-            }
-        }
-
-        let from = preceding_tx.from;
-        let to = match preceding_tx.to {
-            Some(to) => to,
-            None => get_contract_address(from, preceding_tx.nonce),
-        };
-
-        if !preceding_tx.value.is_zero() {
-            if let Some(v) = pre_balances.get_mut(&from) {
-                *v -= preceding_tx.value;
-            }
-
-            if let Some(v) = pre_balances.get_mut(&from) {
-                *v += preceding_tx.value;
-            }
-        }
-
-        let mut execution_context = vec![to];
-        let mut pre_balance_snapshot = vec![pre_balances.clone()];
-
-        let trace_options = GethDebugTracingOptions::default();
-        let preceding_tx_trace = provider
-            .debug_trace_transaction(preceding_tx.hash, trace_options.clone())
-            .await
-            .unwrap();
-
-        let mut depth = 1u64;
-        let mut i = 0;
-        while i < preceding_tx_trace.struct_logs.len() {
-            let log = preceding_tx_trace.struct_logs[i].clone();
-
-            if depth > log.depth {
-                depth = log.depth;
-                execution_context.truncate(depth.try_into().unwrap());
-            }
-
-            match log.op.as_str() {
-                OP_CALL => {
-                    let stack = log.stack.unwrap();
-
-                    let address = decode_address(stack[stack.len() - 2]);
-                    let caller = execution_context.last().unwrap();
-
-                    let value = stack[stack.len() - 3];
-                    let next_log = preceding_tx_trace.struct_logs[i + 1].clone();
-                    let failed = next_log.depth == log.depth;
-                    if !value.is_zero() && !failed {
-                        if let Some(balance) = pre_balances.get_mut(caller) {
-                            *balance -= value;
-                        }
-                        if let Some(balance) = pre_balances.get_mut(&address) {
-                            *balance -= value;
-                        }
-                    }
-
-                    execution_context.push(address);
-                    pre_balance_snapshot.push(pre_balances.clone());
-
-                    depth += 1;
-                }
-                OP_STATICCALL => {
-                    let stack = log.stack.unwrap();
-
-                    let address = decode_address(stack[stack.len() - 2]);
-
-                    execution_context.push(address);
-                    pre_balance_snapshot.push(pre_balances.clone());
-
-                    depth += 1;
-                }
-                OP_DELEGATECALL => {
-                    execution_context.push(*execution_context.last().unwrap());
-                    pre_balance_snapshot.push(pre_balances.clone());
-
-                    depth += 1;
-                }
-                OP_CALLCODE => {
-                    execution_context.push(*execution_context.last().unwrap());
-                    pre_balance_snapshot.push(pre_balances.clone());
-
-                    depth += 1;
-                }
-                OP_CREATE => {
-                    let stack = log.stack.unwrap();
-
-                    let caller = *execution_context.last().unwrap();
-
-                    let mut address = H160::zero();
-                    for log in &transaction_trace.struct_logs[i + 1..] {
-                        if log.depth == depth {
-                            let stack = log.stack.clone().unwrap();
-                            address = decode_address(stack[stack.len() - 1]);
-                            break;
-                        }
-                    }
-
-                    let value = stack[stack.len() - 1];
-                    let next_log = preceding_tx_trace.struct_logs[i + 1].clone();
-                    let failed = next_log.depth == log.depth;
-                    if !value.is_zero() && !failed {
-                        if let Some(balance) = pre_balances.get_mut(&caller) {
-                            *balance -= value;
-                        }
-                        if let Some(balance) = pre_balances.get_mut(&address) {
-                            *balance -= value;
-                        }
-                    }
-
-                    execution_context.push(address);
-                    pre_balance_snapshot.push(pre_balances.clone());
-
-                    depth += 1;
-                }
-                OP_CREATE2 => {
-                    let stack = log.stack.unwrap();
-
-                    let caller = *execution_context.last().unwrap();
-
-                    let offset: usize = stack[stack.len() - 2].as_usize();
-                    let size = stack[stack.len() - 3].as_usize();
-
-                    let mut salt = [0u8; 32];
-                    stack[stack.len() - 4].to_big_endian(&mut salt);
-
-                    let mut memory = Vec::new();
-                    for word in log.memory.unwrap() {
-                        memory.append(&mut hex::decode(word).unwrap());
-                    }
-
-                    let init_code = &memory[offset..offset + size];
-
-                    let address = get_create2_address(caller, salt, init_code.to_vec());
-
-                    let value = stack[stack.len() - 1];
-                    let next_log = preceding_tx_trace.struct_logs[i + 1].clone();
-                    let failed = next_log.depth == log.depth;
-                    if !value.is_zero() && !failed {
-                        if let Some(balance) = pre_balances.get_mut(&caller) {
-                            *balance -= value;
-                        }
-                        if let Some(balance) = pre_balances.get_mut(&address) {
-                            *balance -= value;
-                        }
-                    }
-
-                    execution_context.push(address);
-                    pre_balance_snapshot.push(pre_balances.clone());
-
-                    depth += 1;
-                }
-                OP_REVERT => {
-                    pre_balances = pre_balance_snapshot.pop().unwrap();
-                }
-                OP_INVALID => {
-                    pre_balances = pre_balance_snapshot.pop().unwrap();
-                }
-                _ => (),
-            }
-
-            if log.error.is_some() {
-                pre_balances = pre_balance_snapshot.pop().unwrap();
-            }
-
-            i += 1;
-        }
-    }
+    populate_balance_at_transaction(
+        &mut pre_balances,
+        transaction.block_number.unwrap(),
+        transaction.transaction_index.unwrap(),
+        geth_rpc_endpoint,
+    )
+    .await?;
 
     // apply initial states to post-transaction states
     for (address, initial_balance) in pre_balances.iter() {
@@ -615,7 +412,6 @@ pub async fn extract_transaction(
         let balance = post_balances.get_mut(&address).unwrap();
         *balance -= negative_value;
     }
-
     for (address, pre_storage) in pre_storages.iter() {
         if let Some(post_storage) = post_storages.get_mut(address) {
             for (key, val) in pre_storage {
@@ -625,11 +421,11 @@ pub async fn extract_transaction(
             post_storages.insert(*address, pre_storage.clone());
         }
     }
-
     for (address, code) in pre_codes.iter() {
         post_codes.insert(*address, code.clone());
     }
 
+    // generate intermediate format that will then used to generate test vector
     let status = if transaction_trace.failed { 0 } else { 1 };
     let return_result = hex::encode(transaction_trace.return_value.to_vec());
 
@@ -816,4 +612,225 @@ fn eth_tx_to_input(
         transactions,
         context,
     }
+}
+
+/// Populate accurate balance at specific transaction(**before** the transaction being executed) 
+/// through Geth Debug PRC. Standard Ethereum JSON RPC only allow us get balance at "block".
+// TODO trace whole block at a time to reduce RPC calls.
+async fn populate_balance_at_transaction(
+    address_to_balance: &mut BTreeMap<H160, U256>,
+    block_number: U64,
+    transaction_index: U64,
+    geth_rpc_endpoint: &str,
+) -> anyhow::Result<()> {
+    let provider =
+        Provider::<Http>::try_from(geth_rpc_endpoint).expect("could not instantiate HTTP Provider");
+
+    let block = provider.get_block_with_txs(block_number).await?.unwrap();
+
+    let prev_block_number = block_number - 1;
+    for (address, value) in address_to_balance.iter_mut() {
+        let balance = provider
+            .get_balance(*address, Some(prev_block_number.into()))
+            .await
+            .unwrap();
+        *value = balance;
+    }
+
+    for preceding_tx in &block.transactions {
+        if preceding_tx.transaction_index.unwrap() == transaction_index {
+            break;
+        }
+
+        let receipt = provider
+            .get_transaction_receipt(preceding_tx.hash)
+            .await?
+            .unwrap();
+
+        // gas fee
+        if let Some(balance) = address_to_balance.get_mut(&preceding_tx.from) {
+            // calculate gas fee
+            let gas_used = receipt.gas_used.unwrap();
+            let gas_price = match receipt.effective_gas_price {
+                Some(effective_gas_price) => effective_gas_price,
+                None => preceding_tx.gas_price.unwrap(),
+            };
+            let gas_fee = gas_used * gas_price;
+
+            *balance -= gas_fee;
+        }
+
+        if let Some(status) = receipt.status {
+            if status == 0.into() {
+                // skip failed tx
+                continue;
+            }
+        }
+
+        let from = preceding_tx.from;
+        let to = match preceding_tx.to {
+            Some(to) => to,
+            None => get_contract_address(from, preceding_tx.nonce),
+        };
+
+        if !preceding_tx.value.is_zero() {
+            if let Some(v) = address_to_balance.get_mut(&from) {
+                *v -= preceding_tx.value;
+            }
+
+            if let Some(v) = address_to_balance.get_mut(&from) {
+                *v += preceding_tx.value;
+            }
+        }
+
+        let mut execution_context = vec![to];
+        let mut pre_balance_snapshot = vec![address_to_balance.clone()];
+
+        let trace_options = GethDebugTracingOptions::default();
+        let preceding_tx_trace = provider
+            .debug_trace_transaction(preceding_tx.hash, trace_options.clone())
+            .await
+            .unwrap();
+
+        let mut depth = 1u64;
+        let mut i = 0;
+        while i < preceding_tx_trace.struct_logs.len() {
+            let log = &preceding_tx_trace.struct_logs[i];
+
+            if depth > log.depth {
+                depth = log.depth;
+                execution_context.truncate(depth.try_into().unwrap());
+            }
+
+            match log.op.as_str() {
+                OP_CALL => {
+                    let stack = log.stack.as_ref().unwrap();
+
+                    let address = decode_address(stack[stack.len() - 2]);
+                    let caller = execution_context.last().unwrap();
+
+                    let value = stack[stack.len() - 3];
+                    let next_log = preceding_tx_trace.struct_logs[i + 1].clone();
+                    let failed = next_log.depth == log.depth;
+                    if !value.is_zero() && !failed {
+                        if let Some(balance) = address_to_balance.get_mut(caller) {
+                            *balance -= value;
+                        }
+                        if let Some(balance) = address_to_balance.get_mut(&address) {
+                            *balance -= value;
+                        }
+                    }
+
+                    execution_context.push(address);
+                    pre_balance_snapshot.push(address_to_balance.clone());
+
+                    depth += 1;
+                }
+                OP_STATICCALL => {
+                    let stack = log.stack.as_ref().unwrap();
+
+                    let address = decode_address(stack[stack.len() - 2]);
+
+                    execution_context.push(address);
+                    pre_balance_snapshot.push(address_to_balance.clone());
+
+                    depth += 1;
+                }
+                OP_DELEGATECALL => {
+                    execution_context.push(*execution_context.last().unwrap());
+                    pre_balance_snapshot.push(address_to_balance.clone());
+
+                    depth += 1;
+                }
+                OP_CALLCODE => {
+                    execution_context.push(*execution_context.last().unwrap());
+                    pre_balance_snapshot.push(address_to_balance.clone());
+
+                    depth += 1;
+                }
+                OP_CREATE => {
+                    let stack = log.stack.as_ref().unwrap();
+
+                    let caller = *execution_context.last().unwrap();
+
+                    let mut address = H160::zero();
+                    for log in &preceding_tx_trace.struct_logs[i + 1..] {
+                        if log.depth == depth {
+                            let stack = log.stack.clone().unwrap();
+                            address = decode_address(stack[stack.len() - 1]);
+                            break;
+                        }
+                    }
+
+                    let value = stack[stack.len() - 1];
+                    let next_log = preceding_tx_trace.struct_logs[i + 1].clone();
+                    let failed = next_log.depth == log.depth;
+                    if !value.is_zero() && !failed {
+                        if let Some(balance) = address_to_balance.get_mut(&caller) {
+                            *balance -= value;
+                        }
+                        if let Some(balance) = address_to_balance.get_mut(&address) {
+                            *balance -= value;
+                        }
+                    }
+
+                    execution_context.push(address);
+                    pre_balance_snapshot.push(address_to_balance.clone());
+
+                    depth += 1;
+                }
+                OP_CREATE2 => {
+                    let stack = log.stack.as_ref().unwrap();
+
+                    let caller = *execution_context.last().unwrap();
+
+                    let offset: usize = stack[stack.len() - 2].as_usize();
+                    let size = stack[stack.len() - 3].as_usize();
+
+                    let mut salt = [0u8; 32];
+                    stack[stack.len() - 4].to_big_endian(&mut salt);
+
+                    let mut memory = Vec::new();
+                    for word in log.memory.as_ref().unwrap() {
+                        memory.append(&mut hex::decode(word).unwrap());
+                    }
+
+                    let init_code = &memory[offset..offset + size];
+
+                    let address = get_create2_address(caller, salt, init_code.to_vec());
+
+                    let value = stack[stack.len() - 1];
+                    let next_log = preceding_tx_trace.struct_logs[i + 1].clone();
+                    let failed = next_log.depth == log.depth;
+                    if !value.is_zero() && !failed {
+                        if let Some(balance) = address_to_balance.get_mut(&caller) {
+                            *balance -= value;
+                        }
+                        if let Some(balance) = address_to_balance.get_mut(&address) {
+                            *balance -= value;
+                        }
+                    }
+
+                    execution_context.push(address);
+                    pre_balance_snapshot.push(address_to_balance.clone());
+
+                    depth += 1;
+                }
+                OP_REVERT => {
+                    *address_to_balance = pre_balance_snapshot.pop().unwrap();
+                }
+                OP_INVALID => {
+                    *address_to_balance = pre_balance_snapshot.pop().unwrap();
+                }
+                _ => (),
+            }
+
+            if log.error.is_some() {
+                *address_to_balance = pre_balance_snapshot.pop().unwrap();
+            }
+
+            i += 1;
+        }
+    }
+    Ok(())
 }

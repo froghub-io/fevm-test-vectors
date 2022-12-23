@@ -27,7 +27,7 @@ struct Cli {
 async fn main() -> anyhow::Result<()> {
     init_log();
     let cli = Cli::parse();
-    let input = extract_transaction(cli.tx_hash, cli.geth_rpc_endpoint).await?;
+    let input = extract_transaction(&cli.tx_hash, &cli.geth_rpc_endpoint).await?;
     let contract_out = env::var("CONTRACT_OUT");
     match contract_out {
         Ok(contract_out) => {
