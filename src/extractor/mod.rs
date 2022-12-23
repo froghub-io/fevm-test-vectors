@@ -1,3 +1,5 @@
+pub mod opcodes;
+
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
 use std::str::FromStr;
@@ -10,37 +12,13 @@ use crate::types::{
     EvmContractBalance, EvmContractContext, EvmContractInput, EvmContractState,
     EvmContractTransaction,
 };
+use self::opcodes::*;
 
-const OP_SSTORE: &str = "SSTORE";
-const OP_SLOAD: &str = "SLOAD";
-
-const OP_CALL: &str = "CALL";
-const OP_STATICCALL: &str = "STATICCALL";
-const OP_CALLCODE: &str = "CALLCODE";
-const OP_DELEGATECALL: &str = "DELEGATECALL";
-
-const OP_BALANCE: &str = "BALANCE";
-const OP_SELFBALANCE: &str = "SELFBALANCE";
-
-const OP_CREATE: &str = "CREATE";
-const OP_CREATE2: &str = "CREATE2";
-
-const OP_EXTCODESIZE: &str = "EXTCODESIZE";
-const OP_EXTCODECOPY: &str = "EXTCODECOPY";
-const OP_EXTCODEHASH: &str = "EXTCODEHASH";
-
-const OP_SELFDESTRUCT: &str = "SELFDESTRUCT"; // TODO
-
-const OP_BLOCKHASH: &str = "BLOCKHASH";
-
-const OP_REVERT: &str = "REVERT";
-const OP_INVALID: &str = "INVALID";
-
-pub async fn run_extract(
+pub async fn extract_transaction(
+    hash: String,
     geth_rpc_endpoint: String,
-    tx_hash: String,
 ) -> anyhow::Result<EvmContractInput> {
-    let tx_hash = H256::from_str(&tx_hash)?;
+    let tx_hash = H256::from_str(&hash)?;
 
     let provider =
         Provider::<Http>::try_from(geth_rpc_endpoint).expect("could not instantiate HTTP Provider");
@@ -127,9 +105,9 @@ pub async fn run_extract(
 
         match log.op.as_str() {
             OP_SLOAD => {
-                let mut stack = log.stack.unwrap();
+                let stack = log.stack.unwrap();
 
-                let key = stack.pop().unwrap();
+                let key = stack[stack.len() - 1];
 
                 let mut bytes = [0; 32];
                 key.to_big_endian(&mut bytes);
@@ -144,10 +122,10 @@ pub async fn run_extract(
                     .or_insert(val);
             }
             OP_SSTORE => {
-                let mut stack = log.stack.unwrap();
+                let stack = log.stack.unwrap();
 
-                let key = stack.pop().unwrap();
-                let val = stack.pop().unwrap();
+                let key = stack[stack.len() - 1];
+                let val = stack[stack.len() - 2];
 
                 post_storages
                     .entry(*execution_context.last().unwrap())
@@ -333,6 +311,9 @@ pub async fn run_extract(
 
                 depth += 1;
             }
+            OP_SELFDESTRUCT => {
+                // TODO
+            }
             OP_BALANCE => {
                 let stack = log.stack.unwrap();
 
@@ -417,7 +398,7 @@ pub async fn run_extract(
 
     // Since we can't get accurate balance just before the tx executing from ethereum JSON RPC directly,
     // we need first get accounts balances at previous block and then trace the preceding txs on the same block
-    // for value transfer beween those accounts.
+    // for value transfer between those accounts.
     for (address, value) in pre_balances.iter_mut() {
         let balance = provider
             .get_balance(*address, Some(prev_block_number.into()))

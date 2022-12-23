@@ -3,7 +3,7 @@ use std::fs::File;
 use std::path::Path;
 
 use clap::Parser;
-use fevm_test_vectors::extract_evm::run_extract;
+use fevm_test_vectors::extractor::extract_transaction;
 use fevm_test_vectors::{export_test_vector_file, init_log};
 
 #[derive(Parser, Debug)]
@@ -27,7 +27,7 @@ struct Cli {
 async fn main() -> anyhow::Result<()> {
     init_log();
     let cli = Cli::parse();
-    let input = run_extract(cli.geth_rpc_endpoint, cli.tx_hash).await?;
+    let input = extract_transaction(cli.tx_hash, cli.geth_rpc_endpoint).await?;
     let contract_out = env::var("CONTRACT_OUT");
     match contract_out {
         Ok(contract_out) => {

@@ -50,7 +50,7 @@ use crate::vector::{RandomnessMatch, RandomnessRule, TipsetCid};
 
 mod cidjson;
 pub mod evm_state;
-pub mod extract_evm;
+pub mod extractor;
 pub mod mock_single_actors;
 pub mod tracing_blockstore;
 pub mod types;
