@@ -81,6 +81,7 @@ pub struct RandomnessRule {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct TipsetCid {
     pub epoch: ChainEpoch,
+    #[serde(with = "super::cidjson")]
     pub cid: Cid,
 }
 
