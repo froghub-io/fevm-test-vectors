@@ -8,11 +8,11 @@ use ethers::prelude::*;
 use ethers::providers::{Http, Middleware, Provider};
 use ethers::utils::{get_contract_address, get_create2_address};
 
+use self::opcodes::*;
 use crate::types::{
     EvmContractBalance, EvmContractContext, EvmContractInput, EvmContractState,
     EvmContractTransaction,
 };
-use self::opcodes::*;
 
 pub async fn extract_transaction(
     hash: String,
@@ -731,8 +731,11 @@ fn eth_tx_to_input(
     push_adds(&mut adds, &pre_codes);
     push_adds(&mut adds, &post_codes);
 
+    let mut balance = EvmContractBalance {
+        pre_balance: String::from("00"),
+        post_balance: String::from("00"),
+    };
     let mut states = HashMap::<String, EvmContractState>::new();
-    let mut balances = HashMap::<String, EvmContractBalance>::new();
     for addr in adds {
         let eth_addr = get_eth_addr(Some(addr));
         let pre_storage = get_storage(&addr, &pre_storages);
@@ -741,22 +744,22 @@ fn eth_tx_to_input(
         let post_balance = get_balance(&addr, &post_balances);
         let pre_code = get_code(&addr, &pre_codes);
         let post_code = get_code(&addr, &post_codes);
-        if !addr.eq(&transaction.from) {
-            states.insert(
-                eth_addr.clone(),
-                EvmContractState {
-                    pre_storage,
-                    post_storage,
-                    pre_code,
-                    post_code,
-                },
-            );
-        }
-        balances.insert(
-            eth_addr,
-            EvmContractBalance {
+        if addr.eq(&transaction.from) {
+            balance = EvmContractBalance {
                 pre_balance,
                 post_balance,
+            };
+            continue;
+        }
+        states.insert(
+            eth_addr.clone(),
+            EvmContractState {
+                pre_balance,
+                post_balance,
+                pre_storage,
+                post_storage,
+                pre_code,
+                post_code,
             },
         );
     }
@@ -779,6 +782,7 @@ fn eth_tx_to_input(
         to: get_eth_addr(transaction.to),
         input: hex::encode(transaction.input.to_vec()),
         value: u256_to_str(&transaction.value),
+        balance,
         gas_price: match transaction.gas_price {
             Some(v) => u256_to_str(&v),
             None => String::from("00"),
@@ -809,7 +813,6 @@ fn eth_tx_to_input(
 
     EvmContractInput {
         states,
-        balances,
         transactions,
         context,
     }

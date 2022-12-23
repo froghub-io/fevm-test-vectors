@@ -7,13 +7,14 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EvmContractInput {
     pub states: HashMap<String, EvmContractState>,
-    pub balances: HashMap<String, EvmContractBalance>,
     pub transactions: Vec<EvmContractTransaction>,
     pub context: EvmContractContext,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EvmContractState {
+    pub pre_balance: String,
+    pub post_balance: String,
     pub pre_storage: HashMap<String, String>,
     pub post_storage: HashMap<String, String>,
     pub pre_code: Option<String>,
@@ -40,6 +41,7 @@ pub struct EvmContractContext {
     pub to: String,
     pub input: String,
     pub value: String,
+    pub balance: EvmContractBalance,
     pub gas_limit: u64,
     pub gas_price: String,
     pub gas_fee_cap: String,

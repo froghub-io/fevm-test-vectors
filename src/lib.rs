@@ -211,6 +211,14 @@ where
     let mut mock = Mock::new(store, actor_codes);
     mock.mock_builtin_actor();
 
+    let from = Address::new_delegated(EAM_ACTOR_ID, &string_to_eth_address(&input.context.from).0)
+        .unwrap();
+    mock.mock_embryo_address_actor(
+        from,
+        TokenAmount::from_atto(string_to_big_int(&input.context.balance.pre_balance)),
+        input.context.nonce,
+    );
+
     // preconditions
     let create_contract_eth_addr = if is_create_contract(&input.context.to) {
         Some(compute_address_create(
@@ -220,24 +228,10 @@ where
     } else {
         None
     };
-    for (k, v) in &input.balances {
-        let eth_addr = string_to_eth_address(&k);
-        let addr = Address::new_delegated(EAM_ACTOR_ID, &eth_addr.0).unwrap();
-        let balance = TokenAmount::from_atto(string_to_big_int(&v.pre_balance));
-        if eth_addr.eq(&string_to_eth_address(&input.context.from)) {
-            mock.mock_embryo_address_actor(addr, balance, input.context.nonce);
-            continue;
-        }
-        if let Some(create_contract_eth_addr) = create_contract_eth_addr {
-            if eth_addr.eq(&create_contract_eth_addr) {
-                continue;
-            }
-        }
-        mock.mock_evm_actor(addr, balance);
-    }
     for (eth_addr_str, state) in &input.states {
         let eth_addr = string_to_eth_address(&eth_addr_str);
         let to = Address::new_delegated(EAM_ACTOR_ID, &eth_addr.0).unwrap();
+        let balance = TokenAmount::from_atto(string_to_big_int(&state.pre_balance));
 
         contract_addrs.push(to.clone());
 
@@ -246,6 +240,7 @@ where
                 continue;
             }
         }
+        mock.mock_evm_actor(to, balance);
         let mut storage = HashMap::<U256, U256>::new();
         for (k, v) in &state.pre_storage {
             let key = string_to_u256(&k);
@@ -263,21 +258,16 @@ where
     mock.print_actor_state(pre_state_root)?;
 
     // postconditions
-    for (k, v) in &input.balances {
-        let eth_addr = string_to_eth_address(&k);
-        let addr = Address::new_delegated(EAM_ACTOR_ID, &eth_addr.0).unwrap();
-        let balance = TokenAmount::from_atto(string_to_big_int(&v.post_balance));
-        if let Some(create_contract_eth_addr) = create_contract_eth_addr {
-            if eth_addr.eq(&create_contract_eth_addr) {
-                mock.mock_evm_actor(addr, balance);
-                continue;
-            }
-        }
-        mock.mock_actor_balance(&addr, balance)?;
-    }
+    mock.mock_actor_balance(&from, TokenAmount::from_atto(string_to_big_int(&input.context.balance.post_balance)))?;
     for (eth_addr, state) in &input.states {
         let eth_addr = string_to_eth_address(&eth_addr);
         let to = Address::new_delegated(EAM_ACTOR_ID, &eth_addr.0).unwrap();
+        let balance = TokenAmount::from_atto(string_to_big_int(&state.post_balance));
+        if let Some(create_contract_eth_addr) = create_contract_eth_addr {
+            if eth_addr.eq(&create_contract_eth_addr) {
+                mock.mock_evm_actor(to, balance.clone());
+            }
+        }
         let mut storage = HashMap::<U256, U256>::new();
         for (k, v) in &state.post_storage {
             let key = string_to_u256(&k);
@@ -289,6 +279,7 @@ where
             None => None,
         };
         mock.mock_evm_actor_state(&to, storage, bytecode)?;
+        mock.mock_actor_balance(&to, balance)?;
     }
     let post_state_root = mock.get_state_root();
     log::info!("post_state_root: {:?}", post_state_root);
