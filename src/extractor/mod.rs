@@ -614,7 +614,7 @@ fn eth_tx_to_input(
     }
 }
 
-/// Populate accurate balance at specific transaction(**before** the transaction being executed) 
+/// Populate accurate balance at specific transaction(**before** it being executed)
 /// through Geth Debug PRC. Standard Ethereum JSON RPC only allow us get balance at "block".
 // TODO trace whole block at a time to reduce RPC calls.
 async fn populate_balance_at_transaction(
