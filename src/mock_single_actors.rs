@@ -466,7 +466,8 @@ where
 
     pub fn print_actor_state(&self, state_root: Cid) -> anyhow::Result<()> {
         log::info!("--- actor state ---");
-        let actors = Hamt::<&BS, Actor>::load(&state_root, self.store)?;
+        let actors =
+            Hamt::<&BS, Actor>::load_with_bit_width(&state_root, self.store, HAMT_BIT_WIDTH)?;
         actors.for_each(|_, v| {
             let state_root = v.head;
             let store = self.store.clone();
