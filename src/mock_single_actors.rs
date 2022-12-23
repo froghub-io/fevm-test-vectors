@@ -420,8 +420,8 @@ where
     }
 
     pub fn put_store<S>(&self, obj: &S) -> Cid
-        where
-            S: serde::ser::Serialize,
+    where
+        S: serde::ser::Serialize,
     {
         self.store.put_cbor(obj, Code::Blake2b256).unwrap()
     }

@@ -1,10 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
-use std::fs::File;
-use std::path::Path;
 use std::str::FromStr;
 
-use clap::Parser;
 use ethers::prelude::*;
 use ethers::providers::{Http, Middleware, Provider};
 use ethers::utils::{get_contract_address, get_create2_address};
@@ -158,8 +155,6 @@ pub async fn run_extract(
                     .insert(key, val);
             }
             OP_CALL => {
-                depth += 1;
-
                 let stack = log.stack.unwrap();
 
                 let address = decode_address(stack[stack.len() - 2]);
@@ -191,10 +186,10 @@ pub async fn run_extract(
                     post_balances.clone(),
                     post_balances_negative.clone(),
                 ));
+
+                depth += 1;
             }
             OP_STATICCALL => {
-                depth += 1;
-
                 let stack = log.stack.unwrap();
 
                 let address = decode_address(stack[stack.len() - 2]);
@@ -211,10 +206,10 @@ pub async fn run_extract(
                     post_balances.clone(),
                     post_balances_negative.clone(),
                 ));
+
+                depth += 1;
             }
             OP_DELEGATECALL => {
-                depth += 1;
-
                 let stack = log.stack.unwrap();
 
                 let address = decode_address(stack[stack.len() - 2]);
@@ -231,10 +226,10 @@ pub async fn run_extract(
                     post_balances.clone(),
                     post_balances_negative.clone(),
                 ));
+
+                depth += 1;
             }
             OP_CALLCODE => {
-                depth += 1;
-
                 let stack = log.stack.unwrap();
 
                 let address = decode_address(stack[stack.len() - 2]);
@@ -251,19 +246,22 @@ pub async fn run_extract(
                     post_balances.clone(),
                     post_balances_negative.clone(),
                 ));
+
+                depth += 1;
             }
             OP_CREATE => {
-                depth += 1;
-
                 let stack = log.stack.unwrap();
 
                 let caller = *execution_context.last().unwrap();
-                // FIXME this nonce may not be correct, since the contract may had created ohter contracts before this tx
-                // in the same block
-                let caller_nonce = provider
-                    .get_transaction_count(caller, Some(prev_block_number.into()))
-                    .await?;
-                let address = get_contract_address(caller, caller_nonce);
+
+                let mut address = H160::zero();
+                for log in &transaction_trace.struct_logs[i + 1..] {
+                    if log.depth == depth {
+                        let stack = log.stack.clone().unwrap();
+                        address = decode_address(stack[stack.len() - 1]);
+                        break;
+                    }
+                }
 
                 let value = stack[stack.len() - 1];
                 let next_log = transaction_trace.struct_logs[i + 1].clone();
@@ -287,10 +285,10 @@ pub async fn run_extract(
                     post_balances.clone(),
                     post_balances_negative.clone(),
                 ));
+
+                depth += 1;
             }
             OP_CREATE2 => {
-                depth += 1;
-
                 let stack = log.stack.unwrap();
 
                 let caller = *execution_context.last().unwrap();
@@ -332,6 +330,8 @@ pub async fn run_extract(
                     post_balances.clone(),
                     post_balances_negative.clone(),
                 ));
+
+                depth += 1;
             }
             OP_BALANCE => {
                 let stack = log.stack.unwrap();
@@ -493,8 +493,6 @@ pub async fn run_extract(
 
             match log.op.as_str() {
                 OP_CALL => {
-                    depth += 1;
-
                     let stack = log.stack.unwrap();
 
                     let address = decode_address(stack[stack.len() - 2]);
@@ -514,39 +512,44 @@ pub async fn run_extract(
 
                     execution_context.push(address);
                     pre_balance_snapshot.push(pre_balances.clone());
+
+                    depth += 1;
                 }
                 OP_STATICCALL => {
-                    depth += 1;
-
                     let stack = log.stack.unwrap();
 
                     let address = decode_address(stack[stack.len() - 2]);
 
                     execution_context.push(address);
                     pre_balance_snapshot.push(pre_balances.clone());
+
+                    depth += 1;
                 }
                 OP_DELEGATECALL => {
-                    depth += 1;
                     execution_context.push(*execution_context.last().unwrap());
                     pre_balance_snapshot.push(pre_balances.clone());
+
+                    depth += 1;
                 }
                 OP_CALLCODE => {
-                    depth += 1;
                     execution_context.push(*execution_context.last().unwrap());
                     pre_balance_snapshot.push(pre_balances.clone());
+
+                    depth += 1;
                 }
                 OP_CREATE => {
-                    depth += 1;
-
                     let stack = log.stack.unwrap();
 
                     let caller = *execution_context.last().unwrap();
-                    // FIXME this nonce may not correct, since caller may had created ohter contracts before this tx
-                    // in current block
-                    let caller_nonce = provider
-                        .get_transaction_count(caller, Some(prev_block_number.into()))
-                        .await?;
-                    let address = get_contract_address(caller, caller_nonce);
+
+                    let mut address = H160::zero();
+                    for log in &transaction_trace.struct_logs[i + 1..] {
+                        if log.depth == depth {
+                            let stack = log.stack.clone().unwrap();
+                            address = decode_address(stack[stack.len() - 1]);
+                            break;
+                        }
+                    }
 
                     let value = stack[stack.len() - 1];
                     let next_log = preceding_tx_trace.struct_logs[i + 1].clone();
@@ -562,10 +565,10 @@ pub async fn run_extract(
 
                     execution_context.push(address);
                     pre_balance_snapshot.push(pre_balances.clone());
+
+                    depth += 1;
                 }
                 OP_CREATE2 => {
-                    depth += 1;
-
                     let stack = log.stack.unwrap();
 
                     let caller = *execution_context.last().unwrap();
@@ -599,6 +602,8 @@ pub async fn run_extract(
 
                     execution_context.push(address);
                     pre_balance_snapshot.push(pre_balances.clone());
+
+                    depth += 1;
                 }
                 OP_REVERT => {
                     pre_balances = pre_balance_snapshot.pop().unwrap();
