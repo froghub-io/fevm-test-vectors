@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EvmContractInput {
-    pub states: HashMap<String, EvmContractState>,
-    pub transactions: Vec<EvmContractTransaction>,
     pub context: EvmContractContext,
+    pub transactions: Vec<EvmContractTransaction>,
+    pub states: HashMap<String, EvmContractState>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
