@@ -37,7 +37,7 @@ use serde::{Deserialize, Serialize};
 use util::get_code_cid_map;
 use vector::{ApplyMessage, PreConditions, StateTreeVector, TestVector, Variant};
 
-use crate::mock_single_actors::{print_actor_state, Mock};
+use crate::mock_single_actors::Mock;
 use crate::tracing_blockstore::TracingBlockStore;
 use crate::types::{
     ContractParams, CreateParams, EvmContractBalance, EvmContractContext, EvmContractInput,
@@ -260,7 +260,7 @@ where
     }
     let pre_state_root = mock.get_state_root();
     log::info!("pre_state_root: {:?}", pre_state_root);
-    print_actor_state(pre_state_root, &store)?;
+    mock.print_actor_state(pre_state_root)?;
 
     // postconditions
     for (k, v) in &input.balances {
@@ -292,7 +292,7 @@ where
     }
     let post_state_root = mock.get_state_root();
     log::info!("post_state_root: {:?}", post_state_root);
-    print_actor_state(post_state_root, &store)?;
+    mock.print_actor_state(post_state_root)?;
 
     return Ok((pre_state_root, post_state_root, contract_addrs));
 }

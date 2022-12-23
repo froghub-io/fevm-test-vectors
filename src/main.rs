@@ -35,7 +35,7 @@ async fn main() -> anyhow::Result<()> {
             log::info!("contract_path: {:?}", path);
             let output = File::create(&path)?;
             serde_json::to_writer_pretty(output, &input)?;
-        },
+        }
         Err(_) => {}
     }
     let path = Path::new(&cli.out).to_path_buf();

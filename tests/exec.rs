@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use fevm_test_vectors::mock_single_actors::print_actor_state;
 use fevm_test_vectors::types::EvmContractInput;
 use fevm_test_vectors::util::{compute_address_create, is_create_contract, string_to_eth_address};
 use fevm_test_vectors::{export_test_vector_file, init_log, load_evm_contract_input};

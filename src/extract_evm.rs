@@ -784,7 +784,7 @@ fn eth_tx_to_input(
     }
 
     let context: EvmContractContext = EvmContractContext {
-        tx_hash: tx_hash.to_string(),
+        tx_hash: String::from("0x") + &*h256_to_str(&tx_hash),
         chain_id: match transaction.chain_id {
             Some(v) => v.as_u64(),
             None => 0,
