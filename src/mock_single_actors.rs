@@ -198,26 +198,16 @@ where
         );
     }
 
-    pub fn mock_embryo_address_actor(
-        &mut self,
-        addr: Address,
-        balance: TokenAmount,
-        nonce: u64,
-    ) -> () {
+    pub fn mock_embryo_address_actor(&mut self, addr: Address, balance: TokenAmount, nonce: u64) {
         let mut id_addr = Address::new_id(0);
-        let mut flag = false;
         self.mutate_state(INIT_ACTOR_ADDR, |st: &mut InitState| {
-            match st.map_addresses_to_id(self.store, &addr, None) {
-                Ok((addr_id, exist)) => {
-                    flag = exist;
-                    id_addr = Address::new_id(addr_id);
-                }
-                Err(_) => flag = true,
-            }
+            let (addr_id, exist) = st.map_addresses_to_id(self.store, &addr, None).unwrap();
+            assert!(
+                !exist,
+                "should never have existing actor when no f4 address is specified"
+            );
+            id_addr = Address::new_id(addr_id);
         });
-        if flag {
-            return;
-        }
         self.set_actor(
             id_addr,
             actor(
@@ -233,19 +223,16 @@ where
     pub fn mock_evm_actor(&mut self, addr: Address, balance: TokenAmount) {
         let mut id_addr = Address::new_id(0);
         let robust_address = Address::new_actor(&addr.to_bytes());
-        let mut flag = false;
         self.mutate_state(INIT_ACTOR_ADDR, |st: &mut InitState| {
-            match st.map_addresses_to_id(self.store, &robust_address, Some(&addr)) {
-                Ok((addr_id, exist)) => {
-                    flag = exist;
-                    id_addr = Address::new_id(addr_id);
-                }
-                Err(_) => flag = true,
-            }
+            let (addr_id, exist) = st
+                .map_addresses_to_id(self.store, &robust_address, Some(&addr))
+                .unwrap();
+            assert!(
+                !exist,
+                "should never have existing actor when no f4 address is specified"
+            );
+            id_addr = Address::new_id(addr_id);
         });
-        if flag {
-            return;
-        }
         self.set_actor(
             id_addr,
             actor(

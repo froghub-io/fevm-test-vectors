@@ -258,7 +258,10 @@ where
     mock.print_actor_state(pre_state_root)?;
 
     // postconditions
-    mock.mock_actor_balance(&from, TokenAmount::from_atto(string_to_big_int(&input.context.balance.post_balance)))?;
+    mock.mock_actor_balance(
+        &from,
+        TokenAmount::from_atto(string_to_big_int(&input.context.balance.post_balance)),
+    )?;
     for (eth_addr, state) in &input.states {
         let eth_addr = string_to_eth_address(&eth_addr);
         let to = Address::new_delegated(EAM_ACTOR_ID, &eth_addr.0).unwrap();
