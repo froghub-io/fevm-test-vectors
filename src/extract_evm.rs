@@ -648,6 +648,7 @@ pub async fn run_extract(
     let return_result = hex::encode(transaction_trace.return_value.to_vec());
 
     let input = eth_tx_to_input(
+        tx_hash,
         transaction,
         block,
         pre_storages,
@@ -656,6 +657,7 @@ pub async fn run_extract(
         post_balances,
         pre_codes,
         post_codes,
+        number_to_hash,
         status,
         return_result,
     );
@@ -722,6 +724,7 @@ fn h256_to_str(v: &H256) -> String {
 }
 
 fn eth_tx_to_input(
+    tx_hash: H256,
     transaction: Transaction,
     block: Block<Transaction>,
     pre_storages: BTreeMap<Address, BTreeMap<U256, U256>>,
@@ -730,6 +733,7 @@ fn eth_tx_to_input(
     post_balances: BTreeMap<Address, U256>,
     pre_codes: BTreeMap<Address, Bytes>,
     post_codes: BTreeMap<Address, Bytes>,
+    number_to_hash: BTreeMap<u64, H256>,
     status: usize,
     return_result: String,
 ) -> EvmContractInput {
@@ -772,20 +776,15 @@ fn eth_tx_to_input(
     }
 
     let mut transactions: Vec<EvmContractTransaction> = Vec::new();
-    for t in block.transactions {
+    for (block_num, block_hash) in number_to_hash {
         transactions.push(EvmContractTransaction {
-            block_number: match t.block_number {
-                Some(v) => v.as_u64(),
-                None => 0,
-            },
-            block_hash: match t.block_hash {
-                Some(v) => h256_to_str(&v),
-                None => String::from("00"),
-            },
+            block_number: block_num,
+            block_hash: h256_to_str(&block_hash),
         });
     }
 
     let context: EvmContractContext = EvmContractContext {
+        tx_hash: tx_hash.to_string(),
         chain_id: match transaction.chain_id {
             Some(v) => v.as_u64(),
             None => 0,

@@ -114,17 +114,6 @@ pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> 
 
     // tipset_cids
     let mut tipset_cids = Vec::new();
-    tipset_cids.push(TipsetCid {
-        epoch: input.context.block_number as ChainEpoch,
-        cid: Cid::new_v1(
-            DAG_CBOR,
-            multihash::Multihash::wrap(
-                IDENTITY_HASH,
-                &hex::decode(input.context.block_hash).unwrap(),
-            )
-            .unwrap(),
-        ),
-    });
     for t in input.transactions {
         tipset_cids.push(TipsetCid {
             epoch: t.block_number as ChainEpoch,

@@ -34,6 +34,7 @@ pub struct EvmContractTransaction {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EvmContractContext {
+    pub tx_hash: String,
     pub chain_id: u64,
     pub from: String,
     pub to: String,
