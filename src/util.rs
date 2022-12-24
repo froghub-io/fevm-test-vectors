@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context};
 use async_std::task::block_on;
 use fil_actor_evm::interpreter::instructions::bitwise::byte;
 use fil_actors_runtime::runtime::builtins::Type;
+use fil_actors_runtime::test_utils::ACTOR_CODES;
 use fvm_ipld_car::load_car_unchecked;
 use fvm_ipld_encoding::CborStore;
 use fvm_shared::version::NetworkVersion;
@@ -35,6 +36,10 @@ pub fn get_code_cid_map() -> anyhow::Result<BTreeMap<Type, Cid>> {
         by_id.insert(actor_type, code_cid);
     }
     Ok(by_id)
+}
+
+pub fn get_test_code_cid_map() -> anyhow::Result<BTreeMap<Type, Cid>> {
+    Ok(ACTOR_CODES.clone())
 }
 
 pub fn compute_address_create(from: &EthAddress, nonce: u64) -> EthAddress {
