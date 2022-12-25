@@ -76,7 +76,7 @@ pub async fn extract_transaction(
 
     // transaction value transfer
     post_balances.insert(tx_contract_address, transaction.value);
-    post_balances_negative.insert(tx_from, transaction.value);
+    post_balances_negative.insert(tx_from, transaction.value + gas_fee);
 
     // trace current transaction
     let trace_options: GethDebugTracingOptions = GethDebugTracingOptions {
@@ -91,7 +91,7 @@ pub async fn extract_transaction(
     let mut depth = 1u64;
     let mut i = 0;
     while i < transaction_trace.struct_logs.len() {
-        let log = transaction_trace.struct_logs[i].clone();
+        let log = &transaction_trace.struct_logs[i];
 
         if depth > log.depth {
             depth = log.depth;
@@ -101,13 +101,13 @@ pub async fn extract_transaction(
 
         match log.op.as_str() {
             OP_SLOAD => {
-                let stack = log.stack.unwrap();
+                let stack = log.stack.as_ref().unwrap();
 
                 let key = stack[stack.len() - 1];
 
                 let mut bytes = [0; 32];
                 key.to_big_endian(&mut bytes);
-                let log_storage = log.storage.unwrap();
+                let log_storage = log.storage.as_ref().unwrap();
                 let val = log_storage.get(&H256::from_slice(&bytes)).unwrap();
                 let val = U256::from_big_endian(val.as_bytes());
 
@@ -118,7 +118,7 @@ pub async fn extract_transaction(
                     .or_insert(val);
             }
             OP_SSTORE => {
-                let stack = log.stack.unwrap();
+                let stack = log.stack.as_ref().unwrap();
 
                 let key = stack[stack.len() - 1];
                 let val = stack[stack.len() - 2];
@@ -129,7 +129,7 @@ pub async fn extract_transaction(
                     .insert(key, val);
             }
             OP_CALL => {
-                let stack = log.stack.unwrap();
+                let stack = log.stack.as_ref().unwrap();
 
                 let address = decode_address(stack[stack.len() - 2]);
 
@@ -164,7 +164,7 @@ pub async fn extract_transaction(
                 depth += 1;
             }
             OP_STATICCALL => {
-                let stack = log.stack.unwrap();
+                let stack = log.stack.as_ref().unwrap();
 
                 let address = decode_address(stack[stack.len() - 2]);
 
@@ -184,7 +184,7 @@ pub async fn extract_transaction(
                 depth += 1;
             }
             OP_DELEGATECALL => {
-                let stack = log.stack.unwrap();
+                let stack = log.stack.as_ref().unwrap();
 
                 let address = decode_address(stack[stack.len() - 2]);
 
@@ -204,7 +204,7 @@ pub async fn extract_transaction(
                 depth += 1;
             }
             OP_CALLCODE => {
-                let stack = log.stack.unwrap();
+                let stack = log.stack.as_ref().unwrap();
 
                 let address = decode_address(stack[stack.len() - 2]);
 
@@ -224,14 +224,14 @@ pub async fn extract_transaction(
                 depth += 1;
             }
             OP_CREATE => {
-                let stack = log.stack.unwrap();
+                let stack = log.stack.as_ref().unwrap();
 
                 let caller = *execution_context.last().unwrap();
 
                 let mut address = H160::zero();
                 for log in &transaction_trace.struct_logs[i + 1..] {
                     if log.depth == depth {
-                        let stack = log.stack.clone().unwrap();
+                        let stack = log.stack.as_ref().unwrap();
                         address = decode_address(stack[stack.len() - 1]);
                         break;
                     }
@@ -263,7 +263,7 @@ pub async fn extract_transaction(
                 depth += 1;
             }
             OP_CREATE2 => {
-                let stack = log.stack.unwrap();
+                let stack = log.stack.as_ref().unwrap();
 
                 let caller = *execution_context.last().unwrap();
 
@@ -274,7 +274,7 @@ pub async fn extract_transaction(
                 stack[stack.len() - 4].to_big_endian(&mut salt);
 
                 let mut memory = Vec::new();
-                for word in log.memory.unwrap() {
+                for word in log.memory.as_ref().unwrap() {
                     memory.append(&mut hex::decode(word).unwrap());
                 }
 
@@ -311,7 +311,7 @@ pub async fn extract_transaction(
                 // TODO
             }
             OP_BALANCE => {
-                let stack = log.stack.unwrap();
+                let stack = log.stack.as_ref().unwrap();
 
                 let address = decode_address(stack[stack.len() - 1]);
                 pre_balances.entry(address).or_insert(U256::zero());
@@ -321,7 +321,7 @@ pub async fn extract_transaction(
                 pre_balances.entry(address).or_insert(U256::zero());
             }
             OP_EXTCODESIZE => {
-                let stack = log.stack.unwrap();
+                let stack = log.stack.as_ref().unwrap();
 
                 let address = decode_address(stack[stack.len() - 1]);
                 // there's a possibility that the address didn't have code yet at this time,
@@ -332,7 +332,7 @@ pub async fn extract_transaction(
                 }
             }
             OP_EXTCODECOPY => {
-                let stack = log.stack.unwrap();
+                let stack = log.stack.as_ref().unwrap();
 
                 let address = decode_address(stack[stack.len() - 1]);
 
@@ -342,7 +342,7 @@ pub async fn extract_transaction(
                 }
             }
             OP_EXTCODEHASH => {
-                let stack = log.stack.unwrap();
+                let stack = log.stack.as_ref().unwrap();
 
                 let address = decode_address(stack[stack.len() - 1]);
 
@@ -352,7 +352,7 @@ pub async fn extract_transaction(
                 }
             }
             OP_BLOCKHASH => {
-                let stack = log.stack.unwrap();
+                let stack = log.stack.as_ref().unwrap();
 
                 let stack_after = transaction_trace.struct_logs[i + 1].clone().stack.unwrap();
 
@@ -673,6 +673,9 @@ async fn populate_balance_at_transaction(
             None => get_contract_address(from, preceding_tx.nonce),
         };
 
+        let mut execution_context = vec![to];
+        let mut pre_balance_snapshot = vec![address_to_balance.clone()];
+
         if !preceding_tx.value.is_zero() {
             if let Some(v) = address_to_balance.get_mut(&from) {
                 *v -= preceding_tx.value;
@@ -682,9 +685,6 @@ async fn populate_balance_at_transaction(
                 *v += preceding_tx.value;
             }
         }
-
-        let mut execution_context = vec![to];
-        let mut pre_balance_snapshot = vec![address_to_balance.clone()];
 
         let trace_options = GethDebugTracingOptions::default();
         let preceding_tx_trace = provider
