@@ -11,17 +11,20 @@ use bytes::Buf;
 use cid::multihash::{Code, MultihashDigest};
 use cid::Cid;
 use fil_actor_eam::EthAddress;
+use fil_actor_evm::interpreter::system::StateKamt;
 use fil_actor_evm::interpreter::U256;
 use fil_actors_runtime::runtime::builtins::Type;
 use fil_actors_runtime::runtime::EMPTY_ARR_CID;
-use fil_actors_runtime::{BURNT_FUNDS_ACTOR_ID, EAM_ACTOR_ID, REWARD_ACTOR_ID};
+use fil_actors_runtime::{
+    ActorError, AsActorError, BURNT_FUNDS_ACTOR_ID, EAM_ACTOR_ID, REWARD_ACTOR_ID,
+};
 use flate2::bufread::GzEncoder;
 use flate2::Compression;
 use fvm_ipld_blockstore::{Blockstore, MemoryBlockstore};
 use fvm_ipld_car::CarHeader;
 use fvm_ipld_encoding::{BytesDe, BytesSer, Cbor, CborStore, RawBytes, DAG_CBOR};
 use fvm_ipld_hamt::Hamt;
-use fvm_shared::address::Address;
+use fvm_shared::address::{Address, Payload};
 use fvm_shared::bigint::{BigInt, Integer};
 use fvm_shared::clock::ChainEpoch;
 use fvm_shared::crypto::hash::SupportedHashes;
@@ -37,7 +40,8 @@ use serde::{Deserialize, Serialize};
 use util::get_code_cid_map;
 use vector::{ApplyMessage, PreConditions, StateTreeVector, TestVector, Variant};
 
-use crate::mock_single_actors::Mock;
+use crate::evm_state::State as EvmState;
+use crate::mock_single_actors::{address_to_eth, Actor, Mock, KAMT_CONFIG};
 use crate::tracing_blockstore::TracingBlockStore;
 use crate::types::{
     ContractParams, CreateParams, EvmContractBalance, EvmContractContext, EvmContractInput,
@@ -326,4 +330,41 @@ pub fn to_message(context: &EvmContractContext) -> Message {
         gas_fee_cap: TokenAmount::from_atto(string_to_big_int(&context.gas_fee_cap)),
         gas_premium: TokenAmount::from_atto(string_to_big_int(&context.gas_tip_cap)),
     }
+}
+
+pub fn get_actor_state<BS: Blockstore>(
+    state_root: Cid,
+    store: &BS,
+) -> anyhow::Result<HashMap<String, HashMap<U256, U256>>> {
+    let mut states = HashMap::new();
+    let actors = Hamt::<&BS, Actor>::load_with_bit_width(&state_root, store, HAMT_BIT_WIDTH)?;
+    actors.for_each(|_, v| {
+        let state_root = v.head;
+        let store = store.clone();
+        match store.get_cbor::<EvmState>(&state_root) {
+            Ok(res) => match res {
+                Some(state) => {
+                    if v.predictable_address.is_some() {
+                        let receiver_eth_addr = address_to_eth(&v.predictable_address.unwrap())?;
+                        let mut storage = HashMap::new();
+                        let slots = StateKamt::load_with_config(
+                            &state.contract_state,
+                            store,
+                            KAMT_CONFIG.clone(),
+                        )
+                            .context_code(ExitCode::USR_ILLEGAL_STATE, "state not in blockstore")?;
+                        slots.for_each(|k, v| {
+                            storage.insert(k.clone(), v.clone());
+                            Ok(())
+                        })?;
+                        states.insert(hex::encode(receiver_eth_addr.0), storage);
+                    }
+                }
+                None => {}
+            },
+            Err(_) => {}
+        }
+        Ok(())
+    })?;
+    Ok(states)
 }

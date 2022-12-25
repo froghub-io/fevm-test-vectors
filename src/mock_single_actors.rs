@@ -64,7 +64,7 @@ lazy_static::lazy_static! {
     //
     // The following values have been set by looking at how the charts evolved
     // with the test contract. They might not be the best for other contracts.
-    static ref KAMT_CONFIG: KamtConfig = KamtConfig {
+    pub static ref KAMT_CONFIG: KamtConfig = KamtConfig {
         min_data_depth: 0,
         bit_width: 5,
         max_array_width: 1
@@ -472,51 +472,44 @@ where
             let state_root = v.head;
             let store = self.store.clone();
             match store.get_cbor::<EvmState>(&state_root) {
-                Ok(res) => {
-                    match res {
-                        Some(state) => {
-                            log::info!("actor: {:?}", v);
-                            if v.predictable_address.is_some() {
-                                let delegated_addr = match v.predictable_address.unwrap().payload() {
-                                    Payload::Delegated(delegated) if delegated.namespace() == EAM_ACTOR_ID => {
-                                        // sanity check
-                                        assert_eq!(delegated.subaddress().len(), 20);
-                                        Ok(*delegated)
-                                    }
-                                    _ => Err(ActorError::assertion_failed(format!(
-                                        "EVM actor with delegated address {} created not namespaced to the EAM {}",
-                                        v.predictable_address.unwrap(), EAM_ACTOR_ID,
-                                    ))),
-                                }?;
-                                let receiver_eth_addr = {
-                                    let subaddr: [u8; 20] = delegated_addr.subaddress().try_into().map_err(|_| {
-                                        ActorError::assertion_failed(format!(
-                                            "expected 20 byte EVM address, found {} bytes",
-                                            delegated_addr.subaddress().len()
-                                        ))
-                                    })?;
-                                    EthAddress(subaddr)
-                                };
-                                let addr = Address::new_delegated(EAM_ACTOR_ID, &receiver_eth_addr.0).unwrap();
-                                let addr = self
-                                    .normalize_address(&addr)
-                                    .expect("failed to normalize address");
-                                log::info!("actor_id: {:?} eth_addr: {:?}", addr.to_string(), hex::encode(receiver_eth_addr.0));
-                            }
-                            let bytecode = store
-                                .get(&state.bytecode)
-                                .context_code(ExitCode::USR_NOT_FOUND, "failed to read bytecode")?
-                                .expect("bytecode not in state tree");
-                            log::debug!("bytecode: {:?}", hex::encode(bytecode));
-                            let slots = StateKamt::load_with_config(&state.contract_state, store, KAMT_CONFIG.clone())
-                                .context_code(ExitCode::USR_ILLEGAL_STATE, "state not in blockstore")?;
-                            slots.for_each(|k, v| {
-                                log::info!("{:?}: {:?}", hex::encode(u256_to_bytes(k)), hex::encode(u256_to_bytes(v)));
-                                Ok(())
-                            })?;
-                        },
-                        None => {}
+                Ok(res) => match res {
+                    Some(state) => {
+                        log::info!("actor: {:?}", v);
+                        if v.predictable_address.is_some() {
+                            let receiver_eth_addr =
+                                address_to_eth(&v.predictable_address.unwrap())?;
+                            let addr =
+                                Address::new_delegated(EAM_ACTOR_ID, &receiver_eth_addr.0).unwrap();
+                            let addr = self
+                                .normalize_address(&addr)
+                                .expect("failed to normalize address");
+                            log::info!(
+                                "actor_id: {:?} eth_addr: {:?}",
+                                addr.to_string(),
+                                hex::encode(receiver_eth_addr.0)
+                            );
+                        }
+                        let bytecode = store
+                            .get(&state.bytecode)
+                            .context_code(ExitCode::USR_NOT_FOUND, "failed to read bytecode")?
+                            .expect("bytecode not in state tree");
+                        log::debug!("bytecode: {:?}", hex::encode(bytecode));
+                        let slots = StateKamt::load_with_config(
+                            &state.contract_state,
+                            store,
+                            KAMT_CONFIG.clone(),
+                        )
+                            .context_code(ExitCode::USR_ILLEGAL_STATE, "state not in blockstore")?;
+                        slots.for_each(|k, v| {
+                            log::info!(
+                                "{:?}: {:?}",
+                                hex::encode(u256_to_bytes(k)),
+                                hex::encode(u256_to_bytes(v))
+                            );
+                            Ok(())
+                        })?;
                     }
+                    None => {}
                 },
                 Err(_) => {}
             }
@@ -525,4 +518,28 @@ where
         log::info!("\n");
         Ok(())
     }
+}
+
+pub fn address_to_eth(addr: &Address) -> anyhow::Result<EthAddress> {
+    let delegated_addr = match addr.payload() {
+        Payload::Delegated(delegated) if delegated.namespace() == EAM_ACTOR_ID => {
+            // sanity check
+            assert_eq!(delegated.subaddress().len(), 20);
+            Ok(*delegated)
+        }
+        _ => Err(ActorError::assertion_failed(format!(
+            "EVM actor with delegated address {} created not namespaced to the EAM {}",
+            addr, EAM_ACTOR_ID,
+        ))),
+    }?;
+    let receiver_eth_addr = {
+        let subaddr: [u8; 20] = delegated_addr.subaddress().try_into().map_err(|_| {
+            ActorError::assertion_failed(format!(
+                "expected 20 byte EVM address, found {} bytes",
+                delegated_addr.subaddress().len()
+            ))
+        })?;
+        EthAddress(subaddr)
+    };
+    Ok(receiver_eth_addr)
 }
