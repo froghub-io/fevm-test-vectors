@@ -24,7 +24,6 @@ pub async fn extract_transaction(
         Provider::<Http>::try_from(geth_rpc_endpoint).expect("could not instantiate HTTP Provider");
 
     let transaction = provider.get_transaction(tx_hash).await?.unwrap();
-    let tx_receipt = provider.get_transaction_receipt(tx_hash).await?.unwrap();
 
     let block = provider
         .get_block_with_txs(transaction.block_hash.unwrap())
@@ -49,12 +48,20 @@ pub async fn extract_transaction(
     let mut number_to_hash = BTreeMap::new();
     number_to_hash.insert(block.number.unwrap().as_u64(), block.hash.unwrap());
 
-    // calculate gas fee
-    let gas_used = tx_receipt.gas_used.unwrap();
-    let gas_price = match tx_receipt.effective_gas_price {
-        Some(effective_gas_price) => effective_gas_price,
-        None => transaction.gas_price.unwrap(),
+    // trace current transaction
+    let trace_options: GethDebugTracingOptions = GethDebugTracingOptions {
+        disable_storage: Some(true),
+        enable_memory: Some(false),
+        disable_stack: Some(false),
+        ..Default::default()
     };
+    let transaction_trace = provider
+        .debug_trace_transaction(tx_hash, trace_options)
+        .await?;
+
+    // calculate gas fee
+    let gas_used: U256 = transaction_trace.gas.into();
+    let gas_price = transaction.gas_price.unwrap();
     let gas_fee = gas_used * gas_price;
     pre_balances.insert(tx_from, U256::zero());
     post_balances_negative.insert(tx_from, gas_fee);
@@ -77,18 +84,6 @@ pub async fn extract_transaction(
     // transaction value transfer
     post_balances.insert(tx_contract_address, transaction.value);
     post_balances_negative.insert(tx_from, transaction.value + gas_fee);
-
-    // trace current transaction
-    let trace_options: GethDebugTracingOptions = GethDebugTracingOptions {
-        disable_storage: Some(true),
-        enable_memory: Some(false),
-        disable_stack: Some(false),
-        ..Default::default()
-    };
-
-    let transaction_trace = provider
-        .debug_trace_transaction(tx_hash, trace_options)
-        .await?;
 
     let mut depth = 1u64;
     let mut i = 0;
@@ -387,7 +382,7 @@ pub async fn extract_transaction(
         i += 1;
     }
 
-    populate_balance_at_transaction(
+    populate_balance_at_block_number_and_index(
         &mut pre_balances,
         transaction.block_number.unwrap(),
         transaction.transaction_index.unwrap(),
@@ -616,7 +611,7 @@ fn eth_tx_to_input(
 /// Populate accurate balance at specific transaction(**before** it being executed)
 /// through Geth Debug PRC. Standard Ethereum JSON RPC only allow us get balance at "block".
 // TODO trace whole block at a time to reduce RPC calls.
-async fn populate_balance_at_transaction(
+async fn populate_balance_at_block_number_and_index(
     address_to_balance: &mut BTreeMap<H160, U256>,
     block_number: U64,
     transaction_index: U64,
@@ -641,50 +636,6 @@ async fn populate_balance_at_transaction(
             break;
         }
 
-        let receipt = provider
-            .get_transaction_receipt(preceding_tx.hash)
-            .await?
-            .unwrap();
-
-        // gas fee
-        if let Some(balance) = address_to_balance.get_mut(&preceding_tx.from) {
-            // calculate gas fee
-            let gas_used = receipt.gas_used.unwrap();
-            let gas_price = match receipt.effective_gas_price {
-                Some(effective_gas_price) => effective_gas_price,
-                None => preceding_tx.gas_price.unwrap(),
-            };
-            let gas_fee = gas_used * gas_price;
-
-            *balance -= gas_fee;
-        }
-
-        if let Some(status) = receipt.status {
-            if status == 0.into() {
-                // skip failed tx
-                continue;
-            }
-        }
-
-        let from = preceding_tx.from;
-        let to = match preceding_tx.to {
-            Some(to) => to,
-            None => get_contract_address(from, preceding_tx.nonce),
-        };
-
-        let mut execution_context = vec![to];
-        let mut pre_balance_snapshot = vec![address_to_balance.clone()];
-
-        if !preceding_tx.value.is_zero() {
-            if let Some(v) = address_to_balance.get_mut(&from) {
-                *v -= preceding_tx.value;
-            }
-
-            if let Some(v) = address_to_balance.get_mut(&to) {
-                *v += preceding_tx.value;
-            }
-        }
-
         let trace_options = GethDebugTracingOptions {
             disable_storage: Some(true),
             enable_memory: Some(false),
@@ -692,9 +643,42 @@ async fn populate_balance_at_transaction(
             ..GethDebugTracingOptions::default()
         };
         let preceding_tx_trace = provider
-            .debug_trace_transaction(preceding_tx.hash, trace_options.clone())
+            .debug_trace_transaction(preceding_tx.hash, trace_options)
             .await
             .unwrap();
+
+        // gas fee
+        if let Some(balance) = address_to_balance.get_mut(&preceding_tx.from) {
+            // calculate gas fee
+            let gas_used: U256 = preceding_tx_trace.gas.into();
+            let gas_price = preceding_tx.gas_price.unwrap();
+            let gas_fee = gas_used * gas_price;
+
+            *balance -= gas_fee;
+        }
+
+        if preceding_tx_trace.failed {
+            continue;
+        }
+
+        let tx_from = preceding_tx.from;
+        let tx_to = match preceding_tx.to {
+            Some(to) => to,
+            None => get_contract_address(tx_from, preceding_tx.nonce),
+        };
+
+        let mut execution_context = vec![tx_to];
+        let mut pre_balance_snapshots = vec![address_to_balance.clone()];
+
+        if !preceding_tx.value.is_zero() {
+            if let Some(v) = address_to_balance.get_mut(&tx_from) {
+                *v -= preceding_tx.value;
+            }
+
+            if let Some(v) = address_to_balance.get_mut(&tx_to) {
+                *v += preceding_tx.value;
+            }
+        }
 
         let mut depth = 1u64;
         let mut i = 0;
@@ -726,7 +710,7 @@ async fn populate_balance_at_transaction(
                     }
 
                     execution_context.push(address);
-                    pre_balance_snapshot.push(address_to_balance.clone());
+                    pre_balance_snapshots.push(address_to_balance.clone());
 
                     depth += 1;
                 }
@@ -736,19 +720,19 @@ async fn populate_balance_at_transaction(
                     let address = decode_address(stack[stack.len() - 2]);
 
                     execution_context.push(address);
-                    pre_balance_snapshot.push(address_to_balance.clone());
+                    pre_balance_snapshots.push(address_to_balance.clone());
 
                     depth += 1;
                 }
                 OP_DELEGATECALL => {
                     execution_context.push(*execution_context.last().unwrap());
-                    pre_balance_snapshot.push(address_to_balance.clone());
+                    pre_balance_snapshots.push(address_to_balance.clone());
 
                     depth += 1;
                 }
                 OP_CALLCODE => {
                     execution_context.push(*execution_context.last().unwrap());
-                    pre_balance_snapshot.push(address_to_balance.clone());
+                    pre_balance_snapshots.push(address_to_balance.clone());
 
                     depth += 1;
                 }
@@ -779,7 +763,7 @@ async fn populate_balance_at_transaction(
                     }
 
                     execution_context.push(address);
-                    pre_balance_snapshot.push(address_to_balance.clone());
+                    pre_balance_snapshots.push(address_to_balance.clone());
 
                     depth += 1;
                 }
@@ -810,21 +794,21 @@ async fn populate_balance_at_transaction(
                     }
 
                     execution_context.push(address);
-                    pre_balance_snapshot.push(address_to_balance.clone());
+                    pre_balance_snapshots.push(address_to_balance.clone());
 
                     depth += 1;
                 }
                 OP_REVERT => {
-                    *address_to_balance = pre_balance_snapshot.pop().unwrap();
+                    *address_to_balance = pre_balance_snapshots.pop().unwrap();
                 }
                 OP_INVALID => {
-                    *address_to_balance = pre_balance_snapshot.pop().unwrap();
+                    *address_to_balance = pre_balance_snapshots.pop().unwrap();
                 }
                 _ => (),
             }
 
             if log.error.is_some() {
-                *address_to_balance = pre_balance_snapshot.pop().unwrap();
+                *address_to_balance = pre_balance_snapshots.pop().unwrap();
             }
 
             i += 1;
