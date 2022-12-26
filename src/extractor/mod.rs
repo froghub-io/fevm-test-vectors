@@ -80,7 +80,9 @@ pub async fn extract_transaction(
 
     // trace current transaction
     let trace_options: GethDebugTracingOptions = GethDebugTracingOptions {
-        enable_memory: Some(true),
+        disable_storage: Some(false),
+        enable_memory: Some(false),
+        disable_stack: Some(false),
         ..Default::default()
     };
 
@@ -267,20 +269,14 @@ pub async fn extract_transaction(
 
                 let caller = *execution_context.last().unwrap();
 
-                let offset: usize = stack[stack.len() - 2].as_usize();
-                let size = stack[stack.len() - 3].as_usize();
-
-                let mut salt = [0u8; 32];
-                stack[stack.len() - 4].to_big_endian(&mut salt);
-
-                let mut memory = Vec::new();
-                for word in log.memory.as_ref().unwrap() {
-                    memory.append(&mut hex::decode(word).unwrap());
+                let mut address = H160::zero();
+                for log in &transaction_trace.struct_logs[i + 1..] {
+                    if log.depth == depth {
+                        let stack = log.stack.as_ref().unwrap();
+                        address = decode_address(stack[stack.len() - 1]);
+                        break;
+                    }
                 }
-
-                let init_code = &memory[offset..offset + size];
-
-                let address = get_create2_address(caller, salt, init_code.to_vec());
 
                 let value = stack[stack.len() - 1];
                 let next_log = transaction_trace.struct_logs[i + 1].clone();
@@ -687,8 +683,9 @@ async fn populate_balance_at_transaction(
         }
 
         let trace_options = GethDebugTracingOptions {
-            enable_memory: Some(true),
             disable_storage: Some(true),
+            enable_memory: Some(false),
+            disable_stack: Some(false),
             ..GethDebugTracingOptions::default()
         };
         let preceding_tx_trace = provider
@@ -788,20 +785,14 @@ async fn populate_balance_at_transaction(
 
                     let caller = *execution_context.last().unwrap();
 
-                    let offset: usize = stack[stack.len() - 2].as_usize();
-                    let size = stack[stack.len() - 3].as_usize();
-
-                    let mut salt = [0u8; 32];
-                    stack[stack.len() - 4].to_big_endian(&mut salt);
-
-                    let mut memory = Vec::new();
-                    for word in log.memory.as_ref().unwrap() {
-                        memory.append(&mut hex::decode(word).unwrap());
+                    let mut address = H160::zero();
+                    for log in &preceding_tx_trace.struct_logs[i + 1..] {
+                        if log.depth == depth {
+                            let stack = log.stack.as_ref().unwrap();
+                            address = decode_address(stack[stack.len() - 1]);
+                            break;
+                        }
                     }
-
-                    let init_code = &memory[offset..offset + size];
-
-                    let address = get_create2_address(caller, salt, init_code.to_vec());
 
                     let value = stack[stack.len() - 1];
                     let next_log = preceding_tx_trace.struct_logs[i + 1].clone();
