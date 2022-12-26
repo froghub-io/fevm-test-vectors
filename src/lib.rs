@@ -352,7 +352,7 @@ pub fn get_actor_state<BS: Blockstore>(
                             store,
                             KAMT_CONFIG.clone(),
                         )
-                            .context_code(ExitCode::USR_ILLEGAL_STATE, "state not in blockstore")?;
+                        .context_code(ExitCode::USR_ILLEGAL_STATE, "state not in blockstore")?;
                         slots.for_each(|k, v| {
                             storage.insert(k.clone(), v.clone());
                             Ok(())

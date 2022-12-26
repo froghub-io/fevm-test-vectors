@@ -686,7 +686,11 @@ async fn populate_balance_at_transaction(
             }
         }
 
-        let trace_options = GethDebugTracingOptions::default();
+        let trace_options = GethDebugTracingOptions {
+            enable_memory: Some(true),
+            disable_storage: Some(true),
+            ..GethDebugTracingOptions::default()
+        };
         let preceding_tx_trace = provider
             .debug_trace_transaction(preceding_tx.hash, trace_options.clone())
             .await
