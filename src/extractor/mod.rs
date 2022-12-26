@@ -80,14 +80,14 @@ pub async fn extract_transaction(
 
     // trace current transaction
     let trace_options: GethDebugTracingOptions = GethDebugTracingOptions {
-        disable_storage: Some(false),
+        disable_storage: Some(true),
         enable_memory: Some(false),
         disable_stack: Some(false),
         ..Default::default()
     };
 
     let transaction_trace = provider
-        .debug_trace_transaction(tx_hash, trace_options.clone())
+        .debug_trace_transaction(tx_hash, trace_options)
         .await?;
 
     let mut depth = 1u64;
@@ -107,12 +107,11 @@ pub async fn extract_transaction(
 
                 let key = stack[stack.len() - 1];
 
-                let mut bytes = [0; 32];
-                key.to_big_endian(&mut bytes);
-                let log_storage = log.storage.as_ref().unwrap();
-                let val = log_storage.get(&H256::from_slice(&bytes)).unwrap();
-                let val = U256::from_big_endian(val.as_bytes());
+                let next_log = &transaction_trace.struct_logs[i + 1];
+                let next_log_stack = next_log.stack.as_ref().unwrap();
+                let val = next_log_stack[next_log_stack.len() - 1];
 
+                // insert if not exist
                 pre_storages
                     .entry(*execution_context.last().unwrap())
                     .or_insert(BTreeMap::new())
@@ -141,7 +140,7 @@ pub async fn extract_transaction(
                 }
 
                 let value = stack[stack.len() - 3];
-                let next_log = transaction_trace.struct_logs[i + 1].clone();
+                let next_log = &transaction_trace.struct_logs[i + 1];
                 // In some cases, e.g. insufficient balance for transfer, the call will fail without error
                 // or "revert" opcode in trace logs.
                 let failed = next_log.depth == log.depth;
@@ -240,7 +239,7 @@ pub async fn extract_transaction(
                 }
 
                 let value = stack[stack.len() - 1];
-                let next_log = transaction_trace.struct_logs[i + 1].clone();
+                let next_log = &transaction_trace.struct_logs[i + 1];
                 // In some cases, e.g. insufficient balance for transfer, the call will fail without error.
                 let failed = next_log.depth == log.depth;
                 if !value.is_zero() && !failed {
@@ -279,7 +278,7 @@ pub async fn extract_transaction(
                 }
 
                 let value = stack[stack.len() - 1];
-                let next_log = transaction_trace.struct_logs[i + 1].clone();
+                let next_log = &transaction_trace.struct_logs[i + 1];
                 // In some cases, e.g. insufficient balance for transfer, the call will fail without error.
                 let failed = next_log.depth == log.depth;
                 if !value.is_zero() && !failed {
