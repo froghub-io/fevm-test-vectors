@@ -681,7 +681,7 @@ async fn populate_balance_at_transaction(
                 *v -= preceding_tx.value;
             }
 
-            if let Some(v) = address_to_balance.get_mut(&from) {
+            if let Some(v) = address_to_balance.get_mut(&to) {
                 *v += preceding_tx.value;
             }
         }
@@ -721,7 +721,7 @@ async fn populate_balance_at_transaction(
                             *balance -= value;
                         }
                         if let Some(balance) = address_to_balance.get_mut(&address) {
-                            *balance -= value;
+                            *balance += value;
                         }
                     }
 
@@ -774,7 +774,7 @@ async fn populate_balance_at_transaction(
                             *balance -= value;
                         }
                         if let Some(balance) = address_to_balance.get_mut(&address) {
-                            *balance -= value;
+                            *balance += value;
                         }
                     }
 
@@ -811,7 +811,7 @@ async fn populate_balance_at_transaction(
                             *balance -= value;
                         }
                         if let Some(balance) = address_to_balance.get_mut(&address) {
-                            *balance -= value;
+                            *balance += value;
                         }
                     }
 
