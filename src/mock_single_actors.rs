@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Display;
 
 use cid::multihash::MultihashDigest;
 use cid::Cid;
@@ -464,8 +465,16 @@ where
         self.actor_codes.get(&actor_type).unwrap().clone()
     }
 
-    pub fn print_actor_state(&self, state_root: Cid) -> anyhow::Result<()> {
-        log::info!("--- actor state ---");
+    pub fn print_evm_actors(
+        &self,
+        identifier: impl Display,
+        state_root: Cid,
+    ) -> anyhow::Result<()> {
+        log::info!(
+            "--- {} evm actors, state_root:{} ---",
+            identifier,
+            state_root
+        );
         let actors =
             Hamt::<&BS, Actor>::load_with_bit_width(&state_root, self.store, HAMT_BIT_WIDTH)?;
         actors.for_each(|_, v| {
@@ -474,7 +483,6 @@ where
             match store.get_cbor::<EvmState>(&state_root) {
                 Ok(res) => match res {
                     Some(state) => {
-                        log::info!("actor: {:?}", v);
                         if v.predictable_address.is_some() {
                             let receiver_eth_addr =
                                 address_to_eth(&v.predictable_address.unwrap())?;
@@ -484,11 +492,14 @@ where
                                 .normalize_address(&addr)
                                 .expect("failed to normalize address");
                             log::info!(
-                                "actor_id: {:?} eth_addr: {:?}",
-                                addr.to_string(),
+                                "--- actor_id:{} actor_address:{} eth_addr:{} ---",
+                                addr,
+                                &v.predictable_address.unwrap(),
                                 hex::encode(receiver_eth_addr.0)
                             );
                         }
+                        log::info!("actor: {:?}", v);
+                        log::info!("state: {:?}", &state);
                         let bytecode = store
                             .get(&state.bytecode)
                             .context_code(ExitCode::USR_NOT_FOUND, "failed to read bytecode")?
@@ -500,14 +511,17 @@ where
                             KAMT_CONFIG.clone(),
                         )
                         .context_code(ExitCode::USR_ILLEGAL_STATE, "state not in blockstore")?;
-                        slots.for_each(|k, v| {
-                            log::info!(
-                                "{:?}: {:?}",
-                                hex::encode(u256_to_bytes(k)),
-                                hex::encode(u256_to_bytes(v))
-                            );
-                            Ok(())
-                        })?;
+                        if !slots.is_empty() {
+                            log::info!("slots:");
+                            slots.for_each(|k, v| {
+                                log::info!(
+                                    "0x{}: 0x{}",
+                                    hex::encode(u256_to_bytes(k)),
+                                    hex::encode(u256_to_bytes(v))
+                                );
+                                Ok(())
+                            })?;
+                        }
                     }
                     None => {}
                 },

@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufWriter, Read};
 use std::path::{Path, PathBuf};
@@ -48,7 +49,7 @@ use crate::types::{
 };
 use crate::util::{
     compute_address_create, is_create_contract, string_to_big_int, string_to_bytes,
-    string_to_eth_address, string_to_u256,
+    string_to_eth_address, string_to_u256, u256_to_bytes,
 };
 use crate::vector::{RandomnessMatch, RandomnessRule, TipsetCid};
 
@@ -219,7 +220,8 @@ where
         .unwrap();
     mock.mock_embryo_address_actor(
         from,
-        TokenAmount::from_atto(string_to_big_int(&input.context.balance.pre_balance)),
+        TokenAmount::from_atto(string_to_big_int(&input.context.balance.pre_balance))
+            + TokenAmount::from_whole(100000000),
         input.context.nonce,
     );
 
@@ -258,8 +260,7 @@ where
         mock.mock_evm_actor_state(&to, storage, bytecode)?;
     }
     let pre_state_root = mock.get_state_root();
-    log::info!("pre_state_root: {:?}", pre_state_root);
-    mock.print_actor_state(pre_state_root)?;
+    mock.print_evm_actors("pre", pre_state_root)?;
 
     // postconditions
     mock.mock_actor_balance(
@@ -289,8 +290,7 @@ where
         mock.mock_actor_balance(&to, balance)?;
     }
     let post_state_root = mock.get_state_root();
-    log::info!("post_state_root: {:?}", post_state_root);
-    mock.print_actor_state(post_state_root)?;
+    mock.print_evm_actors("post", post_state_root)?;
 
     return Ok((pre_state_root, post_state_root, contract_addrs));
 }
@@ -326,16 +326,21 @@ pub fn to_message(context: &EvmContractContext) -> Message {
         value: TokenAmount::from_atto(string_to_big_int(&context.value)),
         method_num,
         params,
-        gas_limit: context.gas_limit as i64,
+        gas_limit: (context.gas_limit * 1000000) as i64,
         gas_fee_cap: TokenAmount::from_atto(string_to_big_int(&context.gas_fee_cap)),
         gas_premium: TokenAmount::from_atto(string_to_big_int(&context.gas_tip_cap)),
     }
 }
 
-pub fn get_actor_state<BS: Blockstore>(
+pub fn get_evm_actors_slots<BS: Blockstore>(
+    identifier: impl Display,
     state_root: Cid,
     store: &BS,
 ) -> anyhow::Result<HashMap<String, HashMap<U256, U256>>> {
+    println!(
+        "--- {} evm actors, state_root:{} ---",
+        identifier, state_root
+    );
     let mut states = HashMap::new();
     let actors = Hamt::<&BS, Actor>::load_with_bit_width(&state_root, store, HAMT_BIT_WIDTH)?;
     actors.for_each(|_, v| {
@@ -346,6 +351,13 @@ pub fn get_actor_state<BS: Blockstore>(
                 Some(state) => {
                     if v.predictable_address.is_some() {
                         let receiver_eth_addr = address_to_eth(&v.predictable_address.unwrap())?;
+                        println!(
+                            "--- actor_address:{} eth_addr:{} ---",
+                            &v.predictable_address.unwrap(),
+                            hex::encode(receiver_eth_addr.0)
+                        );
+                        println!("actor: {:?}", v);
+                        println!("state: {:?}", &state);
                         let mut storage = HashMap::new();
                         let slots = StateKamt::load_with_config(
                             &state.contract_state,
@@ -353,11 +365,19 @@ pub fn get_actor_state<BS: Blockstore>(
                             KAMT_CONFIG.clone(),
                         )
                         .context_code(ExitCode::USR_ILLEGAL_STATE, "state not in blockstore")?;
-                        slots.for_each(|k, v| {
-                            storage.insert(k.clone(), v.clone());
-                            Ok(())
-                        })?;
-                        states.insert(hex::encode(receiver_eth_addr.0), storage);
+                        if !slots.is_empty() {
+                            println!("slots:");
+                            slots.for_each(|k, v| {
+                                println!(
+                                    "0x{}: 0x{}",
+                                    hex::encode(u256_to_bytes(k)),
+                                    hex::encode(u256_to_bytes(v))
+                                );
+                                storage.insert(k.clone(), v.clone());
+                                Ok(())
+                            })?;
+                            states.insert(hex::encode(receiver_eth_addr.0), storage);
+                        }
                     }
                 }
                 None => {}
