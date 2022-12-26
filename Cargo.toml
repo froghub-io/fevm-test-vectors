@@ -2,6 +2,7 @@
 name = "fevm-test-vectors"
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/froghub-io/fevm-test-vectors.git"
 
 [lib]
 
@@ -53,6 +54,7 @@ multihash = { version = "0.16.1", default-features = false }
 tokio = { version = "1.18", features = ["macros", "rt-multi-thread"] }
 ethers = { version = "1.0.2" }
 clap = { version = "3.2.3", features = ["derive"] }
+walkdir = "2.3.2"
 
 [features]
 m2-native = []

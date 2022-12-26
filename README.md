@@ -17,14 +17,33 @@ and the data written by SSTORE, which is used to generate the Test Vector JSON f
 FEVM consumes Test Vector. It involves migrating SLOAD data to BlockStore and intercepting SSTORE data, by comparing it
 with the expected SSTORE data in the Test Vector to get a test report.
 
-## Usage
+## Release
 
+``` bash
+make build --release
 ```
-// Not required. If set, contract json information can be exported
-export CONTRACT_OUT=<CONTRACT_OUT> 
-export RUST_LOG=info
 
-cargo run --package fevm-test-vectors --bin fevm-test-vectors -- --geth-rpc-endpoint <GETH_RPC_ENDPOINT> --tx-hash <TX_HASH> --out <OUT>
+## CLI: fevm-test-vectors
+
+fevm-test-vectors extract extracts a test vector from a live network. It requires access to a GETH client that exposes
+the standard GETH-RPC-ENDPOINT API endpoint. It has three subcommands.
+
+- extract: Generate a fvm test vector by extracting it from a live chain.
+
+``` bash
+fevm-test-vectors extract --geth-rpc-endpoint <GETH_RPC_ENDPOINT> --tx-hash <TX_HASH> --out-dir <OUT_DIR>
+```
+
+- extract-evm: Generate a evm test vector by extracting it from a live chain.
+
+``` bash
+fevm-test-vectors extract-evm --geth-rpc-endpoint <GETH_RPC_ENDPOINT> --tx-hash <TX_HASH> --out-dir <OUT_DIR> 
+```
+
+- trans: Evm test vector to fvm test vector
+
+``` bash
+fevm-test-vectors trans --in-dir <IN_DIR> --out-dir <OUT_DIR>
 ```
 
 ## License

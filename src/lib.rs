@@ -50,7 +50,7 @@ use crate::util::{
     compute_address_create, is_create_contract, string_to_big_int, string_to_bytes,
     string_to_eth_address, string_to_u256,
 };
-use crate::vector::{RandomnessMatch, RandomnessRule, TipsetCid};
+use crate::vector::{GenerationData, MetaData, RandomnessMatch, RandomnessRule, TipsetCid};
 
 mod cidjson;
 pub mod evm_state;
@@ -148,11 +148,21 @@ pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> 
         timestamp: Some(1671507767),
         nv: NetworkVersion::V18 as u32,
     }];
+    let a = env!("CARGO_PKG_REPOSITORY");
     let test_vector = TestVector {
         class: String::from_str("message")?,
         chain_id: Some(1),
         selector: None,
-        meta: None,
+        meta: Some(MetaData {
+            id: input.context.tx_hash,
+            version: String::from(""),
+            description: String::from(""),
+            comment: String::from(""),
+            gen: vec![GenerationData {
+                source: env!("CARGO_PKG_REPOSITORY").to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+            }],
+        }),
         car: gz_car_bytes,
         preconditions: PreConditions {
             state_tree: StateTreeVector {
