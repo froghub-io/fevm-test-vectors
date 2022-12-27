@@ -23,7 +23,7 @@ enum SubCommand {
 }
 
 #[derive(Debug, Parser)]
-#[clap(about = "Generate a fvm test vector by extracting it from a live chain.", long_about = None)]
+#[clap(about = "Generate test vector from geth rpc directly.", long_about = None)]
 pub struct Extract {
     #[clap(short, long)]
     geth_rpc_endpoint: String,
@@ -38,7 +38,7 @@ pub struct Extract {
 }
 
 #[derive(Debug, Parser)]
-#[clap(about = "Generate a evm test vector by extracting it from a live chain.", long_about = None)]
+#[clap(about = "Extract transaction details file through `evm tracing`.", long_about = None)]
 pub struct ExtractEvm {
     #[clap(short, long)]
     geth_rpc_endpoint: String,
@@ -53,7 +53,7 @@ pub struct ExtractEvm {
 }
 
 #[derive(Debug, Parser)]
-#[clap(about = "Evm test vector to fvm test vector", long_about = None)]
+#[clap(about = "Generate test vector from evm transation file.", long_about = None)]
 pub struct Trans {
     /// evm test vector input dir path
     #[clap(short, long)]
