@@ -146,7 +146,7 @@ pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> 
     let variants = vec![Variant {
         id: String::from("test_evm"),
         epoch: input.context.block_number as ChainEpoch,
-        timestamp: Some(1671507767),
+        timestamp: Some(input.context.timestamp as u64),
         nv: NetworkVersion::V18 as u32,
     }];
     let a = env!("CARGO_PKG_REPOSITORY");
@@ -186,7 +186,12 @@ pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> 
         skip_compare_gas_used: true,
         skip_compare_addresses: Some(vec![message.from]),
         skip_compare_actor_ids: Some(vec![REWARD_ACTOR_ID, BURNT_FUNDS_ACTOR_ID]),
-        additional_compare_addresses: Some(contract_addrs),
+        additional_compare_addresses: Some(
+            contract_addrs
+                .into_iter()
+                .filter(|contract_addr| contract_addr != &message.to)
+                .collect(),
+        ),
         tipset_cids: Some(tipset_cids),
         randomness,
     };
