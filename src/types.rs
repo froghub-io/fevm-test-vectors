@@ -51,6 +51,7 @@ pub struct EvmContractContext {
     pub nonce: u64,
     pub block_hash: String,
     pub block_difficulty: usize,
+    pub block_mix_hash: String,
     pub status: usize,
     #[serde(alias = "return")]
     pub return_result: String,

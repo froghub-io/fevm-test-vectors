@@ -127,9 +127,9 @@ pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> 
     }
 
     const ENTROPY: &[u8] = b"prevrandao";
-    let block_difficulty_bytes = input.context.block_difficulty.to_be_bytes();
+    let block_mix_hash = hex::decode(input.context.block_mix_hash).unwrap();
     let mut ret = vec![0u8; 32];
-    ret[32 - block_difficulty_bytes.len()..32].copy_from_slice(&block_difficulty_bytes);
+    ret[32 - block_mix_hash.len()..32].copy_from_slice(&block_mix_hash);
     let randomness = vec![RandomnessMatch {
         on: RandomnessRule {
             kind: vector::RandomnessKind::Beacon,
@@ -147,7 +147,7 @@ pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> 
     }];
     let test_vector = TestVector {
         class: String::from_str("message")?,
-        chain_id: Some(1),
+        chain_id: Some(input.context.chain_id),
         selector: None,
         meta: Some(MetaData {
             id: input.context.tx_hash,

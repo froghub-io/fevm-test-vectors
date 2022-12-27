@@ -598,6 +598,10 @@ fn eth_tx_to_input(
             None => String::from("00"),
         },
         block_difficulty: block.difficulty.as_usize(),
+        block_mix_hash: match block.mix_hash {
+            Some(v) => h256_to_str(&v),
+            None => String::from("00"),
+        },
         status,
         return_result,
     };
