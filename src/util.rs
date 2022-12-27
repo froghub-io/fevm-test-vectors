@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use anyhow::{anyhow, Context};
 use async_std::task::block_on;
-use fil_actor_evm::interpreter::instructions::bitwise::byte;
 use fil_actors_runtime::runtime::builtins::Type;
 use fil_actors_runtime::test_utils::ACTOR_CODES;
 use fvm_ipld_car::load_car_unchecked;

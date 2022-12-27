@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 use ethers::prelude::*;
 use ethers::providers::{Http, Middleware, Provider};
-use ethers::utils::{get_contract_address, get_create2_address};
+use ethers::utils::get_contract_address;
 
 use self::opcodes::*;
 use crate::types::{

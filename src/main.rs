@@ -1,5 +1,4 @@
-use std::fmt::format;
-use std::fs::{File, FileType};
+use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
@@ -55,9 +54,9 @@ pub struct ExtractEvm {
 #[derive(Debug, Parser)]
 #[clap(about = "Generate test vector from evm transation file.", long_about = None)]
 pub struct Trans {
-    /// evm test vector input dir path
+    /// evm test vector input file/dir path
     #[clap(short, long)]
-    in_dir: String,
+    input: String,
 
     /// fvm test vector output dir path
     #[clap(short, long)]
@@ -85,23 +84,32 @@ async fn main() -> anyhow::Result<()> {
             serde_json::to_writer_pretty(output, &evm_input)?;
         }
         SubCommand::Trans(config) => {
-            let in_dir = Path::new(&config.in_dir);
-            assert!(in_dir.is_dir(), "in_dir must directory");
             let out_dir = Path::new(&config.out_dir);
             assert!(out_dir.is_dir(), "out_dir must directory");
-            let files: Vec<PathBuf> = WalkDir::new(in_dir)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(is_runnable)
-                .map(|e| e.path().to_path_buf())
-                .collect();
+            let input = Path::new(&config.input);
+            if input.is_dir() {
+                let files: Vec<PathBuf> = WalkDir::new(input)
+                    .into_iter()
+                    .filter_map(|e| e.ok())
+                    .filter(is_runnable)
+                    .map(|e| e.path().to_path_buf())
+                    .collect();
 
-            for p in files {
-                let file_name = p.file_name().unwrap().to_str().unwrap();
-                let file = File::open(p.clone())?;
+                for p in files {
+                    let file_name = p.file_name().unwrap().to_str().unwrap();
+                    let file = File::open(p.clone())?;
+                    let reader = BufReader::new(file);
+                    let evm_input: EvmContractInput = serde_json::from_reader(reader)
+                        .expect(&*format!("Serialization failed: {:?}", p));
+                    let path = out_dir.join(file_name);
+                    export_test_vector_file(evm_input, path).await?;
+                }
+            } else {
+                let file_name = input.file_name().unwrap().to_str().unwrap();
+                let file = File::open(input.clone())?;
                 let reader = BufReader::new(file);
                 let evm_input: EvmContractInput = serde_json::from_reader(reader)
-                    .expect(&*format!("Serialization failed: {:?}", p));
+                    .expect(&*format!("Serialization failed: {:?}", input));
                 let path = out_dir.join(file_name);
                 export_test_vector_file(evm_input, path).await?;
             }

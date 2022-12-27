@@ -7,42 +7,34 @@ use cid::Cid;
 use fil_actor_account::State as AccountState;
 use fil_actor_eam::EthAddress;
 use fil_actor_evm::interpreter::system::StateKamt;
-use fil_actor_evm::interpreter::{Bytecode, StatusCode, U256};
+use fil_actor_evm::interpreter::{StatusCode, U256};
 use fil_actor_init::State as InitState;
 use fil_actor_reward::State as RewardState;
 use fil_actor_system::State as SystemState;
 use fil_actors_runtime::runtime::builtins::Type;
 use fil_actors_runtime::runtime::EMPTY_ARR_CID;
-use fil_actors_runtime::test_utils::{ACTOR_CODES, EAM_ACTOR_CODE_ID};
 use fil_actors_runtime::{
     ActorError, AsActorError, BURNT_FUNDS_ACTOR_ADDR, EAM_ACTOR_ADDR, EAM_ACTOR_ID,
     INIT_ACTOR_ADDR, REWARD_ACTOR_ADDR, SYSTEM_ACTOR_ADDR,
 };
 use fvm_ipld_blockstore::{Block, Blockstore};
 use fvm_ipld_encoding::tuple::*;
-use fvm_ipld_encoding::{strict_bytes, Cbor, CborStore, RawBytes};
+use fvm_ipld_encoding::CborStore;
 use fvm_ipld_hamt::Hamt;
 use fvm_ipld_kamt::Config as KamtConfig;
 use fvm_shared::address::{Address, Payload};
 use fvm_shared::crypto::hash::SupportedHashes;
 use fvm_shared::econ::TokenAmount;
 use fvm_shared::error::ExitCode;
-use fvm_shared::message::Message;
 use fvm_shared::sector::StoragePower;
-use fvm_shared::{MethodNum, HAMT_BIT_WIDTH, IPLD_RAW, METHOD_SEND};
-use log::log;
+use fvm_shared::{HAMT_BIT_WIDTH, IPLD_RAW};
 use multihash::{Code, MultihashGeneric};
 use num_traits::Zero;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::evm_state::State as EvmState;
-use crate::types::CreateParams;
-use crate::util::{
-    is_create_contract, string_to_big_int, string_to_bytes, string_to_eth_address, string_to_i64,
-    u256_to_bytes,
-};
-use crate::EvmContractContext;
+use crate::util::u256_to_bytes;
 
 lazy_static::lazy_static! {
     // The Solidity compiler creates contiguous array item keys.

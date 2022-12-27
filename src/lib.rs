@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Display;
 use std::fs::File;
-use std::io::{BufWriter, Read};
-use std::path::{Path, PathBuf};
+use std::io::Read;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Once};
 
@@ -16,28 +16,24 @@ use fil_actor_evm::interpreter::system::StateKamt;
 use fil_actor_evm::interpreter::U256;
 use fil_actors_runtime::runtime::builtins::Type;
 use fil_actors_runtime::runtime::EMPTY_ARR_CID;
-use fil_actors_runtime::{
-    ActorError, AsActorError, BURNT_FUNDS_ACTOR_ID, EAM_ACTOR_ID, REWARD_ACTOR_ID,
-};
+use fil_actors_runtime::{AsActorError, BURNT_FUNDS_ACTOR_ID, EAM_ACTOR_ID, REWARD_ACTOR_ID};
 use flate2::bufread::GzEncoder;
 use flate2::Compression;
 use fvm_ipld_blockstore::{Blockstore, MemoryBlockstore};
 use fvm_ipld_car::CarHeader;
-use fvm_ipld_encoding::{BytesDe, BytesSer, Cbor, CborStore, RawBytes, DAG_CBOR};
+use fvm_ipld_encoding::{BytesDe, Cbor, CborStore, RawBytes, DAG_CBOR};
 use fvm_ipld_hamt::Hamt;
-use fvm_shared::address::{Address, Payload};
+use fvm_shared::address::Address;
 use fvm_shared::bigint::{BigInt, Integer};
 use fvm_shared::clock::ChainEpoch;
 use fvm_shared::crypto::hash::SupportedHashes;
 use fvm_shared::econ::TokenAmount;
 use fvm_shared::error::ExitCode;
 use fvm_shared::message::Message;
-use fvm_shared::randomness::RANDOMNESS_LENGTH;
 use fvm_shared::receipt::Receipt;
 use fvm_shared::version::NetworkVersion;
 use fvm_shared::{MethodNum, HAMT_BIT_WIDTH, IDENTITY_HASH, METHOD_SEND};
 use num_traits::Zero;
-use serde::{Deserialize, Serialize};
 use util::get_code_cid_map;
 use vector::{ApplyMessage, PreConditions, StateTreeVector, TestVector, Variant};
 
@@ -149,7 +145,6 @@ pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> 
         timestamp: Some(input.context.timestamp as u64),
         nv: NetworkVersion::V18 as u32,
     }];
-    let a = env!("CARGO_PKG_REPOSITORY");
     let test_vector = TestVector {
         class: String::from_str("message")?,
         chain_id: Some(1),
