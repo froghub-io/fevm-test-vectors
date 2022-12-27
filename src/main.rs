@@ -16,14 +16,14 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum SubCommand {
-    Extract(Extract),
-    ExtractEvm(ExtractEvm),
-    Trans(Trans),
+    Generate(Generate),
+    ExtractTransaction(ExtractTransaction),
+    GenerateFromFile(GenerateFromFile),
 }
 
 #[derive(Debug, Parser)]
 #[clap(about = "Generate test vector from geth rpc directly.", long_about = None)]
-pub struct Extract {
+pub struct Generate {
     #[clap(short, long)]
     geth_rpc_endpoint: String,
 
@@ -37,8 +37,8 @@ pub struct Extract {
 }
 
 #[derive(Debug, Parser)]
-#[clap(about = "Extract transaction details file through `evm tracing`.", long_about = None)]
-pub struct ExtractEvm {
+#[clap(about = "Extract transaction detail file through evm tracing.", long_about = None)]
+pub struct ExtractTransaction {
     #[clap(short, long)]
     geth_rpc_endpoint: String,
 
@@ -52,8 +52,8 @@ pub struct ExtractEvm {
 }
 
 #[derive(Debug, Parser)]
-#[clap(about = "Generate test vector from evm transation file.", long_about = None)]
-pub struct Trans {
+#[clap(about = "Generate test vector from transation detail file.", long_about = None)]
+pub struct GenerateFromFile {
     /// evm test vector input file/dir path
     #[clap(short, long)]
     input: String,
@@ -68,14 +68,14 @@ async fn main() -> anyhow::Result<()> {
     init_log();
     let cli = Cli::parse();
     match cli.cmd {
-        SubCommand::Extract(config) => {
+        SubCommand::Generate(config) => {
             let out_dir = Path::new(&config.out_dir);
             assert!(out_dir.is_dir(), "out_dir must directory");
             let evm_input = extract_transaction(&config.tx_hash, &config.geth_rpc_endpoint).await?;
             let path = out_dir.join(format!("{}.json", config.tx_hash));
             export_test_vector_file(evm_input, path).await?;
         }
-        SubCommand::ExtractEvm(config) => {
+        SubCommand::ExtractTransaction(config) => {
             let out_dir = Path::new(&config.out_dir);
             assert!(out_dir.is_dir(), "out_dir must directory");
             let evm_input = extract_transaction(&config.tx_hash, &config.geth_rpc_endpoint).await?;
@@ -83,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
             let output = File::create(&path)?;
             serde_json::to_writer_pretty(output, &evm_input)?;
         }
-        SubCommand::Trans(config) => {
+        SubCommand::GenerateFromFile(config) => {
             let out_dir = Path::new(&config.out_dir);
             assert!(out_dir.is_dir(), "out_dir must directory");
             let input = Path::new(&config.input);

@@ -1,6 +1,6 @@
 # FEVM Test Vectors
 
-`fevm-test-vectors` generate test vector from geth rpc with debug namespace enabled.
+`fevm-test-vectors` generate [test vector](https://github.com/filecoin-project/test-vectors) from geth rpc with debug namespace enabled.
 
 ## Build
 
@@ -10,26 +10,26 @@ cargo build
 
 ## Command
 
-**extract evm transaction**
+**extract ethereum transaction**
 
-Extract transaction details file through `evm tracing` (including contract slot changes, balance changes, and bytecodes, etc.).
+Extract transaction detail file through `evm tracing` (including contract slot changes, balance changes, and bytecodes, etc.).
 
 ``` bash
-RUST_LOG=info fevm-test-vectors extract-evm --geth-rpc-endpoint <GETH_RPC_ENDPOINT> --tx-hash <TX_HASH> --out-dir <OUT_DIR> 
+RUST_LOG=info fevm-test-vectors extract-transaction --geth-rpc-endpoint <GETH_RPC_ENDPOINT> --tx-hash <TX_HASH> --out-dir <OUT_DIR> 
 ```
 
 **generate test vector**
 
-Generate test vector from evm transation file.
+Generate test vector from transation detail file.
 
 ``` bash
-RUST_LOG=info fevm-test-vectors trans --input <IN_FILE|IN_DIR> --out-dir <OUT_DIR>
+RUST_LOG=info fevm-test-vectors generate-from-transaction --input <IN_FILE|IN_DIR> --out-dir <OUT_DIR>
 ```
 
 Generate test vector from geth rpc directly.
 
 ``` bash
-RUST_LOG=info fevm-test-vectors extract --geth-rpc-endpoint <GETH_RPC_ENDPOINT> --tx-hash <TX_HASH> --out-dir <OUT_DIR>
+RUST_LOG=info fevm-test-vectors generate --geth-rpc-endpoint <GETH_RPC_ENDPOINT> --tx-hash <TX_HASH> --out-dir <OUT_DIR>
 ```
 
 ## License
