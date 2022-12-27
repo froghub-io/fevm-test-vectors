@@ -23,7 +23,7 @@ RUST_LOG=info fevm-test-vectors extract-transaction --geth-rpc-endpoint <GETH_RP
 Generate test vector from transation detail file.
 
 ``` bash
-RUST_LOG=info fevm-test-vectors generate-from-transaction --input <IN_FILE|IN_DIR> --out-dir <OUT_DIR>
+RUST_LOG=info fevm-test-vectors generate-from-file --input <IN_FILE|IN_DIR> --out-dir <OUT_DIR>
 ```
 
 Generate test vector from geth rpc directly.
