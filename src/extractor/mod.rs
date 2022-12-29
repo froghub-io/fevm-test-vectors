@@ -1,4 +1,6 @@
 pub mod opcodes;
+mod transaction;
+pub mod types;
 
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryFrom;
@@ -414,6 +416,7 @@ pub async fn extract_transaction(
     for (address, code) in pre_codes.iter() {
         post_codes.insert(*address, code.clone());
     }
+    dbg!(&pre_balances);
 
     // generate intermediate format that will then used to generate test vector
     let status = if transaction_trace.failed { 0 } else { 1 };
