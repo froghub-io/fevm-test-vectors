@@ -382,13 +382,13 @@ pub async fn extract_transaction(
         i += 1;
     }
 
-    // populate_balance_at_block_number_and_index(
-    //     &mut pre_balances,
-    //     transaction.block_number.unwrap(),
-    //     transaction.transaction_index.unwrap(),
-    //     geth_rpc_endpoint,
-    // )
-    // .await?;
+    populate_balance_at_block_number_and_index(
+        &mut pre_balances,
+        transaction.block_number.unwrap(),
+        transaction.transaction_index.unwrap(),
+        geth_rpc_endpoint,
+    )
+    .await?;
 
     // apply initial states to post-transaction states
     for (address, initial_balance) in pre_balances.iter() {
@@ -398,10 +398,10 @@ pub async fn extract_transaction(
             post_balances.insert(*address, *initial_balance);
         }
     }
-    // for (address, negative_value) in post_balances_negative {
-    //     let balance = post_balances.get_mut(&address).unwrap();
-    //     *balance -= negative_value;
-    // }
+    for (address, negative_value) in post_balances_negative {
+        let balance = post_balances.get_mut(&address).unwrap();
+        *balance -= negative_value;
+    }
     for (address, pre_storage) in pre_storages.iter() {
         if let Some(post_storage) = post_storages.get_mut(address) {
             for (key, val) in pre_storage {
@@ -632,6 +632,8 @@ async fn populate_balance_at_block_number_and_index(
     }
 
     for preceding_tx in &block.transactions {
+        //  skip temporarily
+        break;
         if preceding_tx.transaction_index.unwrap() == transaction_index {
             break;
         }
