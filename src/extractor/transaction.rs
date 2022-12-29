@@ -274,6 +274,11 @@ pub async fn extract_eth_transaction_test_vector<P: JsonRpcClient>(
         i += 1;
     }
 
+    // refund unused gas
+    // TODO  some opcodes(e.g. SSTORE) have additional gas refund.
+    let leftover_gas = transaction.gas  - transaction_trace.gas;
+    poststate.get_mut(&tx_from).unwrap().balance += leftover_gas * gas_price;
+
     let eth_transaction_test_vector = EthTransactionTestVector {
         hash: transaction.hash,
         nonce: transaction.nonce.as_u64(),
