@@ -178,6 +178,8 @@ pub async fn extract_eth_transaction_test_vector<P: JsonRpcClient>(
                         poststate.get_mut(&address).unwrap().balance += value;
                     }
 
+                    poststate.get_mut(caller).unwrap().nonce += 1;
+
                     // FIXME
                     let code = provider.get_code(address, None).await?;
                     poststate.get_mut(&address).unwrap().code = code;
@@ -213,6 +215,8 @@ pub async fn extract_eth_transaction_test_vector<P: JsonRpcClient>(
                         poststate.get_mut(&address).unwrap().balance += value;
                     }
 
+                    poststate.get_mut(caller).unwrap().nonce += 1;
+
                     // FIXME
                     let code = provider.get_code(address, None).await?;
                     poststate.get_mut(&address).unwrap().code = code;
@@ -223,7 +227,21 @@ pub async fn extract_eth_transaction_test_vector<P: JsonRpcClient>(
                 depth += 1;
             }
             OP_SELFDESTRUCT => {
-                // TODO
+                let stack = log.stack.as_ref().unwrap();
+                let beneficiary = decode_address(stack[stack.len() - 1]);
+
+                let caller = execution_contexts.last().unwrap();
+
+                let caller_balance = poststate.get_mut(caller).unwrap().balance;
+                if caller_balance != 0.into() {
+                    poststate.get_mut(&beneficiary).unwrap().balance += caller_balance;
+                }
+
+                // consider delete the account?
+                let caller_account_state = poststate.get_mut(caller).unwrap();
+                caller_account_state.balance = 0.into();
+                caller_account_state.nonce = 0;
+                caller_account_state.code = Bytes::default();
             }
             OP_BALANCE => {}
             OP_SELFBALANCE => {}
