@@ -31,6 +31,7 @@ use fvm_shared::econ::TokenAmount;
 use fvm_shared::error::ExitCode;
 use fvm_shared::message::Message;
 use fvm_shared::receipt::Receipt;
+use fvm_shared::state::StateRoot;
 use fvm_shared::version::NetworkVersion;
 use fvm_shared::{MethodNum, HAMT_BIT_WIDTH, IDENTITY_HASH, METHOD_SEND};
 use num_traits::Zero;
@@ -38,7 +39,7 @@ use util::get_code_cid_map;
 use vector::{ApplyMessage, PreConditions, StateTreeVector, TestVector, Variant};
 
 use crate::evm_state::State as EvmState;
-use crate::mock_single_actors::{address_to_eth, Actor, Mock, KAMT_CONFIG};
+use crate::mock::{address_to_eth, Actor, Mock, KAMT_CONFIG};
 use crate::tracing_blockstore::TracingBlockStore;
 use crate::types::{
     ContractParams, CreateParams, EvmContractBalance, EvmContractContext, EvmContractInput,
@@ -52,7 +53,7 @@ use crate::vector::{GenerationData, MetaData, RandomnessMatch, RandomnessRule, T
 mod cidjson;
 pub mod evm_state;
 pub mod extractor;
-pub mod mock_single_actors;
+pub mod mock;
 pub mod tracing_blockstore;
 pub mod types;
 pub mod util;
@@ -71,10 +72,24 @@ pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> 
     let actor_codes = get_code_cid_map()?;
     let store = TracingBlockStore::new(MemoryBlockstore::new());
 
-    let (pre_state_root, post_state_root, contract_addrs) =
+    let (pre_actors, post_actors, contract_addrs) =
         load_evm_contract_input(&store, actor_codes, &input)?;
-    let pre_state_root = store.put_cbor(&(5, pre_state_root, EMPTY_ARR_CID), Code::Blake2b256)?;
-    let post_state_root = store.put_cbor(&(5, post_state_root, EMPTY_ARR_CID), Code::Blake2b256)?;
+    let pre_state_root = store.put_cbor(
+        &StateRoot {
+            version: fvm_shared::state::StateTreeVersion::V5,
+            actors: pre_actors,
+            info: EMPTY_ARR_CID,
+        },
+        Code::Blake2b256,
+    )?;
+    let post_state_root = store.put_cbor(
+        &StateRoot {
+            version: fvm_shared::state::StateTreeVersion::V5,
+            actors: post_actors,
+            info: EMPTY_ARR_CID,
+        },
+        Code::Blake2b256,
+    )?;
 
     //car_bytes
     let car_header = CarHeader::new(vec![pre_state_root, post_state_root], 1);
@@ -269,8 +284,8 @@ where
         };
         mock.mock_evm_actor_state(&to, storage, bytecode)?;
     }
-    let pre_state_root = mock.get_state_root();
-    mock.print_evm_actors("pre", pre_state_root)?;
+    let pre_actors = mock.get_actors();
+    mock.print_evm_actors("pre", pre_actors)?;
 
     // postconditions
     mock.mock_actor_balance(
@@ -299,10 +314,10 @@ where
         mock.mock_evm_actor_state(&to, storage, bytecode)?;
         mock.mock_actor_balance(&to, balance)?;
     }
-    let post_state_root = mock.get_state_root();
-    mock.print_evm_actors("post", post_state_root)?;
+    let post_actors = mock.get_actors();
+    mock.print_evm_actors("post", post_actors)?;
 
-    return Ok((pre_state_root, post_state_root, contract_addrs));
+    return Ok((pre_actors, post_actors, contract_addrs));
 }
 
 pub fn to_message(context: &EvmContractContext) -> Message {

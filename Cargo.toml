@@ -15,7 +15,7 @@ fil_actor_account = { version = "10.0.0-alpha.1", git = "https://github.com/file
 fil_actor_reward = { version = "10.0.0-alpha.1", git = "https://github.com/filecoin-project/builtin-actors.git", branch = "next" }
 fil_actor_evm = { version = "10.0.0-alpha.1", git = "https://github.com/filecoin-project/builtin-actors.git", branch = "next" }
 fil_actor_eam = { version = "10.0.0-alpha.1", git = "https://github.com/filecoin-project/builtin-actors.git", branch = "next" }
-actors-v10 = { package = "fil_builtin_actors_bundle", git = "https://github.com/filecoin-project/builtin-actors.git", branch = "next", features = ["m2-native"] }
+actors-v10 = { package = "fil_builtin_actors_bundle", git = "https://github.com/froghub-io/builtin-actors.git", branch = "fevm-test-vectors", features = ["m2-native"] }
 
 anyhow = "1.0.65"
 bimap = { version = "0.6.2" }

@@ -94,7 +94,7 @@ where
     BS: Blockstore,
 {
     store: &'bs BS,
-    state_root: RefCell<Cid>,
+    actors: RefCell<Cid>,
     actor_codes: BTreeMap<Type, Cid>,
 }
 
@@ -104,10 +104,10 @@ where
 {
     pub fn new(store: &'bs BS, actor_codes: BTreeMap<Type, Cid>) -> Self {
         let mut actors = Hamt::<&BS, Actor>::new_with_bit_width(store, HAMT_BIT_WIDTH);
-        let state_root = actors.flush().unwrap();
+        let actors_cid = actors.flush().unwrap();
         Self {
             store,
-            state_root: RefCell::new(state_root),
+            actors: RefCell::new(actors_cid),
             actor_codes,
         }
     }
@@ -256,9 +256,9 @@ where
         let addr = self
             .normalize_address(addr)
             .expect("failed to normalize address");
-        let state_root = self.get_actor(addr).unwrap().head;
+        let head = self.get_actor(addr).unwrap().head;
         let (mut slots, bytecode_cid, bytecode_hash, nonce) =
-            match self.store.get_cbor::<EvmState>(&state_root) {
+            match self.store.get_cbor::<EvmState>(&head) {
                 Ok(res) => match res {
                     Some(state) => {
                         let slots = StateKamt::load_with_config(
@@ -394,8 +394,8 @@ where
         Ok(())
     }
 
-    pub fn get_state_root(&self) -> Cid {
-        let cid: &Cid = &self.state_root.borrow();
+    pub fn get_actors(&self) -> Cid {
+        let cid: &Cid = &self.actors.borrow();
         cid.clone()
     }
 
@@ -417,18 +417,18 @@ where
 
     pub fn set_actor(&mut self, actor_addr: Address, actor: Actor) -> () {
         let mut actors = Hamt::<&BS, Actor>::load_with_bit_width(
-            &self.state_root.borrow(),
+            &self.actors.borrow(),
             self.store,
             HAMT_BIT_WIDTH,
         )
         .unwrap();
         actors.set(actor_addr.to_bytes().into(), actor).unwrap();
-        self.state_root.replace(actors.flush().unwrap());
+        self.actors.replace(actors.flush().unwrap());
     }
 
     pub fn get_actor(&self, addr: Address) -> Option<Actor> {
         let actors = Hamt::<&BS, Actor>::load_with_bit_width(
-            &self.state_root.borrow(),
+            &self.actors.borrow(),
             self.store,
             HAMT_BIT_WIDTH,
         )
@@ -457,22 +457,13 @@ where
         self.actor_codes.get(&actor_type).unwrap().clone()
     }
 
-    pub fn print_evm_actors(
-        &self,
-        identifier: impl Display,
-        state_root: Cid,
-    ) -> anyhow::Result<()> {
-        log::info!(
-            "--- {} evm actors, state_root:{} ---",
-            identifier,
-            state_root
-        );
-        let actors =
-            Hamt::<&BS, Actor>::load_with_bit_width(&state_root, self.store, HAMT_BIT_WIDTH)?;
+    pub fn print_evm_actors(&self, identifier: impl Display, actors: Cid) -> anyhow::Result<()> {
+        log::info!("--- {} evm actors, actors:{} ---", identifier, actors);
+        let actors = Hamt::<&BS, Actor>::load_with_bit_width(&actors, self.store, HAMT_BIT_WIDTH)?;
         actors.for_each(|_, v| {
-            let state_root = v.head;
+            let head = v.head;
             let store = self.store.clone();
-            match store.get_cbor::<EvmState>(&state_root) {
+            match store.get_cbor::<EvmState>(&head) {
                 Ok(res) => match res {
                     Some(state) => {
                         if v.predictable_address.is_some() {

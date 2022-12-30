@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
+use async_std::task::block_on;
 use clap::{Parser, Subcommand};
 use fevm_test_vectors::extractor::extract_transaction;
 use fevm_test_vectors::types::EvmContractInput;
@@ -71,14 +72,20 @@ async fn main() -> anyhow::Result<()> {
         SubCommand::Generate(config) => {
             let out_dir = Path::new(&config.out_dir);
             assert!(out_dir.is_dir(), "out_dir must directory");
-            let evm_input = extract_transaction(&config.tx_hash, &config.geth_rpc_endpoint).await?;
+            let evm_input = block_on(extract_transaction(
+                &config.tx_hash,
+                &config.geth_rpc_endpoint,
+            ))?;
             let path = out_dir.join(format!("{}.json", config.tx_hash));
-            export_test_vector_file(evm_input, path).await?;
+            block_on(export_test_vector_file(evm_input, path))?;
         }
         SubCommand::ExtractTransaction(config) => {
             let out_dir = Path::new(&config.out_dir);
             assert!(out_dir.is_dir(), "out_dir must directory");
-            let evm_input = extract_transaction(&config.tx_hash, &config.geth_rpc_endpoint).await?;
+            let evm_input = block_on(extract_transaction(
+                &config.tx_hash,
+                &config.geth_rpc_endpoint,
+            ))?;
             let path = out_dir.join(format!("{}.json", config.tx_hash));
             let output = File::create(&path)?;
             serde_json::to_writer_pretty(output, &evm_input)?;
@@ -102,7 +109,7 @@ async fn main() -> anyhow::Result<()> {
                     let evm_input: EvmContractInput = serde_json::from_reader(reader)
                         .expect(&*format!("Serialization failed: {:?}", p));
                     let path = out_dir.join(file_name);
-                    export_test_vector_file(evm_input, path).await?;
+                    block_on(export_test_vector_file(evm_input, path))?;
                 }
             } else {
                 let file_name = input.file_name().unwrap().to_str().unwrap();
@@ -111,7 +118,7 @@ async fn main() -> anyhow::Result<()> {
                 let evm_input: EvmContractInput = serde_json::from_reader(reader)
                     .expect(&*format!("Serialization failed: {:?}", input));
                 let path = out_dir.join(file_name);
-                export_test_vector_file(evm_input, path).await?;
+                block_on(export_test_vector_file(evm_input, path))?;
             }
         }
     }
