@@ -5,7 +5,7 @@
 ## Build
 
 ``` bash
-cargo build
+cargo build --release
 ```
 
 ## Command
@@ -30,6 +30,14 @@ Generate test vector from geth rpc directly.
 
 ``` bash
 RUST_LOG=info fevm-test-vectors generate --geth-rpc-endpoint <GETH_RPC_ENDPOINT> --tx-hash <TX_HASH> --out-dir <OUT_DIR>
+```
+
+## Consume Test Vector
+
+Use [froghub-io/ref-fvm](https://github.com/froghub-io/ref-fvm/tree/testing-evm-vectors) to consume test vectors.
+
+``` bash
+RUST_LOG=info CARGO_PROFILE_BENCH_DEBUG=true VECTOR=fevm-test-vectors/corpus/test_vectors/xxx.json cargo bench --bench  bench_conformance -- --nocapture
 ```
 
 ## License
