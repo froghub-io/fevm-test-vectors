@@ -1,7 +1,11 @@
 use std::collections::BTreeMap;
+use std::str::FromStr;
 
-use ethers::types::{Bytes, H160, H256, U256, U64};
-use serde::{Deserialize, Serialize, Serializer};
+use ethers::types::{Bytes, H160, H256, U256};
+use num_traits::Zero;
+use serde::{Deserialize, Serialize};
+
+use crate::BigInt;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EthAccountState {
@@ -9,6 +13,14 @@ pub struct EthAccountState {
     pub balance: U256,
     pub code: Bytes,
     pub storage: BTreeMap<H256, H256>,
+}
+
+impl EthAccountState {
+    pub fn get_balance(&self) -> BigInt {
+        let mut bytes = [0u8; 32];
+        self.balance.to_big_endian(&mut bytes);
+        bytes_to_big_int(&bytes)
+    }
 }
 
 pub type EthState = BTreeMap<H160, EthAccountState>;
@@ -38,8 +50,59 @@ pub struct EthTransactionTestVector {
     pub chain_id: U256,
     pub block_number: u64,
     pub block_hashes: BTreeMap<u64, H256>,
+    pub block_mix_hash: Option<H256>,
     pub timestamp: U256,
     // pre-state and post-state
     pub prestate: EthState,
     pub poststate: EthState,
+}
+
+impl EthTransactionTestVector {
+    pub fn create_contract(&self) -> bool {
+        if self.to.0.eq(&[0u8; 20]) {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn get_value(&self) -> BigInt {
+        let mut bytes = [0u8; 32];
+        self.value.to_big_endian(&mut bytes);
+        bytes_to_big_int(&bytes)
+    }
+
+    pub fn get_max_priority_fee_per_gas(&self) -> BigInt {
+        match self.max_priority_fee_per_gas {
+            Some(v) => {
+                let mut bytes = [0u8; 32];
+                v.to_big_endian(&mut bytes);
+                bytes_to_big_int(&bytes)
+            }
+            None => BigInt::zero(),
+        }
+    }
+
+    pub fn get_max_fee_per_gas(&self) -> BigInt {
+        match self.max_fee_per_gas {
+            Some(v) => {
+                let mut bytes = [0u8; 32];
+                v.to_big_endian(&mut bytes);
+                bytes_to_big_int(&bytes)
+            }
+            None => BigInt::zero(),
+        }
+    }
+}
+
+fn bytes_to_big_int(v: &[u8]) -> BigInt {
+    let mut i = 0;
+    while i < v.len() {
+        match BigInt::from_str(&*hex::encode(&v[i..])) {
+            Ok(v) => return v,
+            Err(_) => {}
+        }
+        i += 2;
+    }
+    return BigInt::zero();
 }

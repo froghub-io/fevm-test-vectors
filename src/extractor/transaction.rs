@@ -1,8 +1,8 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use ethers::prelude::*;
-use ethers::providers::{Http, Middleware, Provider};
+use ethers::providers::{Middleware, Provider};
 use ethers::utils;
 use ethers::utils::get_contract_address;
 
@@ -276,7 +276,7 @@ pub async fn extract_eth_transaction_test_vector<P: JsonRpcClient>(
 
     // refund unused gas
     // TODO  some opcodes(e.g. SSTORE) have additional gas refund.
-    let leftover_gas = transaction.gas  - transaction_trace.gas;
+    let leftover_gas = transaction.gas - transaction_trace.gas;
     poststate.get_mut(&tx_from).unwrap().balance += leftover_gas * gas_price;
 
     let eth_transaction_test_vector = EthTransactionTestVector {
@@ -299,6 +299,7 @@ pub async fn extract_eth_transaction_test_vector<P: JsonRpcClient>(
         chain_id: transaction.chain_id.unwrap(),
         block_number: block.number.unwrap().as_u64(),
         block_hashes,
+        block_mix_hash: block.mix_hash,
         timestamp: block.timestamp,
         prestate,
         poststate,
@@ -321,8 +322,7 @@ fn U256_to_H256(val: U256) -> H256 {
 #[tokio::test]
 async fn test_extract() {
     let tx_hash =
-        H256::from_str("0xa1ab514169a899fcea29144a8eb6a4613b46f2108e15b0a5d43afd44e0baa839")
-            .unwrap();
+        H256::from_str("0xa1ab514169a899fcea29144a8eb6a4613b46f2108e15b0a5d43afd44e0baa839").unwrap();
     let provider = Provider::<Http>::try_from("http://localhost:8546")
         .expect("could not instantiate HTTP Provider");
 

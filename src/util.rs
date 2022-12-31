@@ -59,45 +59,21 @@ pub fn hash(hasher: SupportedHashes, data: &[u8]) -> Vec<u8> {
     Vec::from(&digest[..written as usize])
 }
 
-pub fn string_to_u256(str: &str) -> U256 {
-    let v = string_to_bytes(str);
+pub fn hex_to_u256(str: &str) -> U256 {
+    let v = hex_to_bytes(str);
     let mut r = [0u8; 32];
     r[32 - v.len()..32].copy_from_slice(&v);
     U256::from_big_endian(&r)
 }
 
-pub fn string_to_i64(str: &str) -> i64 {
-    let v = string_to_bytes(str);
-    if v.len() > 8 {
-        let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(&v[v.len() - 8..v.len()]);
-        i64::from_str(&*hex::encode(bytes)).unwrap()
-    } else {
-        i64::from_str(&*hex::encode(v)).unwrap()
-    }
-}
-
-pub fn string_to_big_int(str: &str) -> BigInt {
-    let v = string_to_bytes(str);
-    let mut i = 0;
-    while i < v.len() {
-        match BigInt::from_str(&*hex::encode(&v[i..])) {
-            Ok(v) => return v,
-            Err(_) => {}
-        }
-        i += 2;
-    }
-    return BigInt::zero();
-}
-
-pub fn string_to_eth_address(str: &str) -> EthAddress {
-    let v = string_to_bytes(str);
+pub fn hex_to_eth_address(str: &str) -> EthAddress {
+    let v = hex_to_bytes(str);
     let mut r = [0u8; 20];
     r[20 - v.len()..20].copy_from_slice(&v);
     EthAddress(r)
 }
 
-pub fn string_to_bytes(str: &str) -> Vec<u8> {
+pub fn hex_to_bytes(str: &str) -> Vec<u8> {
     if str.starts_with("0x") {
         let str = &str[2..str.len()];
         hex::decode(if str.len().is_odd() {
@@ -127,15 +103,6 @@ pub fn u256_to_bytes(u: &U256) -> Vec<u8> {
         v[i * 8..(i + 1) * 8].copy_from_slice(&e);
     });
     v
-}
-
-pub fn is_create_contract(to: &str) -> bool {
-    // to: 0x00
-    if string_to_eth_address("0x00").eq(&string_to_eth_address(to)) {
-        true
-    } else {
-        false
-    }
 }
 
 #[test]

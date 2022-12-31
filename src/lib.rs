@@ -11,6 +11,7 @@ use async_std::sync::RwLock;
 use bytes::Buf;
 use cid::multihash::{Code, MultihashDigest};
 use cid::Cid;
+use ethers::abi::AbiEncode;
 use fil_actor_eam::EthAddress;
 use fil_actor_evm::interpreter::system::StateKamt;
 use fil_actor_evm::interpreter::U256;
@@ -34,20 +35,15 @@ use fvm_shared::receipt::Receipt;
 use fvm_shared::state::StateRoot;
 use fvm_shared::version::NetworkVersion;
 use fvm_shared::{MethodNum, HAMT_BIT_WIDTH, IDENTITY_HASH, METHOD_SEND};
-use num_traits::Zero;
 use util::get_code_cid_map;
 use vector::{ApplyMessage, PreConditions, StateTreeVector, TestVector, Variant};
 
 use crate::evm_state::State as EvmState;
+use crate::extractor::types::EthTransactionTestVector;
 use crate::mock::{address_to_eth, Actor, Mock, KAMT_CONFIG};
 use crate::tracing_blockstore::TracingBlockStore;
-use crate::types::{
-    ContractParams, CreateParams, EvmContractBalance, EvmContractContext, EvmContractInput,
-};
-use crate::util::{
-    compute_address_create, is_create_contract, string_to_big_int, string_to_bytes,
-    string_to_eth_address, string_to_u256, u256_to_bytes,
-};
+use crate::types::{ContractParams, CreateParams};
+use crate::util::{compute_address_create, hex_to_u256, u256_to_bytes};
 use crate::vector::{GenerationData, MetaData, RandomnessMatch, RandomnessRule, TipsetCid};
 
 mod cidjson;
@@ -68,7 +64,10 @@ pub fn init_log() {
     });
 }
 
-pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> anyhow::Result<()> {
+pub async fn export_test_vector_file(
+    input: EthTransactionTestVector,
+    path: PathBuf,
+) -> anyhow::Result<()> {
     let actor_codes = get_code_cid_map()?;
     let store = TracingBlockStore::new(MemoryBlockstore::new());
 
@@ -117,12 +116,12 @@ pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> 
     gz_encoder.read_to_end(&mut gz_car_bytes).unwrap();
 
     //message
-    let message = to_message(&input.context);
+    let message = to_message(&input);
 
     //receipt
     let receipt = Receipt {
         exit_code: ExitCode::OK,
-        return_data: RawBytes::serialize(BytesDe(hex::decode(&input.context.return_result)?))?,
+        return_data: RawBytes::serialize(BytesDe(input.return_value.to_vec()))?,
         gas_used: 0,
         events_root: None,
     };
@@ -130,42 +129,42 @@ pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> 
 
     // tipset_cids
     let mut tipset_cids = Vec::new();
-    for t in input.transactions {
+    for (block_number, block_hash) in input.block_hashes {
         tipset_cids.push(TipsetCid {
-            epoch: t.block_number as ChainEpoch,
+            epoch: block_number as ChainEpoch,
             cid: Cid::new_v1(
                 DAG_CBOR,
-                multihash::Multihash::wrap(IDENTITY_HASH, &hex::decode(t.block_hash).unwrap())
-                    .unwrap(),
+                multihash::Multihash::wrap(IDENTITY_HASH, &block_hash.0).unwrap(),
             ),
         });
     }
 
     const ENTROPY: &[u8] = b"prevrandao";
-    let block_mix_hash = hex::decode(input.context.block_mix_hash).unwrap();
-    let mut ret = vec![0u8; 32];
-    ret[32 - block_mix_hash.len()..32].copy_from_slice(&block_mix_hash);
+    let ret = match input.block_mix_hash {
+        Some(v) => v.0.to_vec(),
+        None => vec![0u8; 32],
+    };
     let randomness = vec![RandomnessMatch {
         on: RandomnessRule {
             kind: vector::RandomnessKind::Beacon,
             dst: 10, //fil_actors_runtime::runtime::randomness::DomainSeparationTag::EvmPrevRandao as i64,
-            epoch: input.context.block_number as ChainEpoch,
+            epoch: input.block_number as ChainEpoch,
             entropy: Vec::from(ENTROPY),
         },
         ret,
     }];
     let variants = vec![Variant {
         id: String::from("test_evm"),
-        epoch: input.context.block_number as ChainEpoch,
-        timestamp: Some(input.context.timestamp as u64),
+        epoch: input.block_number as ChainEpoch,
+        timestamp: Some(input.timestamp.as_u64()),
         nv: NetworkVersion::V18 as u32,
     }];
     let test_vector = TestVector {
         class: String::from_str("message")?,
-        chain_id: Some(input.context.chain_id),
+        chain_id: Some(input.chain_id.as_u64()),
         selector: None,
         meta: Some(MetaData {
-            id: input.context.tx_hash,
+            id: input.hash.encode_hex(),
             version: String::from(""),
             description: String::from(""),
             comment: String::from(""),
@@ -211,27 +210,10 @@ pub async fn export_test_vector_file(input: EvmContractInput, path: PathBuf) -> 
     Ok(())
 }
 
-pub fn get_eth_addr_balance(
-    eth_addr: &String,
-    balances: &HashMap<String, EvmContractBalance>,
-    pre: bool,
-) -> TokenAmount {
-    match balances.get(eth_addr) {
-        Some(v) => {
-            if pre {
-                TokenAmount::from_atto(string_to_big_int(&v.pre_balance))
-            } else {
-                TokenAmount::from_atto(string_to_big_int(&v.post_balance))
-            }
-        }
-        None => TokenAmount::from_atto(0),
-    }
-}
-
 pub fn load_evm_contract_input<BS>(
     store: &BS,
     actor_codes: BTreeMap<Type, Cid>,
-    input: &EvmContractInput,
+    input: &EthTransactionTestVector,
 ) -> anyhow::Result<(Cid, Cid, Vec<Address>)>
 where
     BS: Blockstore,
@@ -241,28 +223,22 @@ where
     let mut mock = Mock::new(store, actor_codes);
     mock.mock_builtin_actor();
 
-    let from = Address::new_delegated(EAM_ACTOR_ID, &string_to_eth_address(&input.context.from).0)
-        .unwrap();
-    mock.mock_embryo_address_actor(
-        from,
-        TokenAmount::from_atto(string_to_big_int(&input.context.balance.pre_balance))
-            + TokenAmount::from_whole(100000000),
-        input.context.nonce,
-    );
+    let from = Address::new_delegated(EAM_ACTOR_ID, &input.from.0).unwrap();
+    mock.mock_embryo_address_actor(from, TokenAmount::from_whole(100000000), input.nonce);
 
     // preconditions
-    let create_contract_eth_addr = if is_create_contract(&input.context.to) {
+    let create_contract_eth_addr = if input.create_contract() {
         Some(compute_address_create(
-            &string_to_eth_address(&input.context.from),
-            input.context.nonce,
+            &EthAddress(input.from.0),
+            input.nonce,
         ))
     } else {
         None
     };
-    for (eth_addr_str, state) in &input.states {
-        let eth_addr = string_to_eth_address(&eth_addr_str);
+    for (k, state) in &input.prestate {
+        let eth_addr = EthAddress(k.0);
         let to = Address::new_delegated(EAM_ACTOR_ID, &eth_addr.0).unwrap();
-        let balance = TokenAmount::from_atto(string_to_big_int(&state.pre_balance));
+        let balance = TokenAmount::from_atto(state.get_balance());
 
         contract_addrs.push(to.clone());
 
@@ -271,48 +247,36 @@ where
                 continue;
             }
         }
-        mock.mock_evm_actor(to, balance);
+        mock.mock_evm_actor(to, balance, state.nonce);
         let mut storage = HashMap::<U256, U256>::new();
-        for (k, v) in &state.pre_storage {
-            let key = string_to_u256(&k);
-            let value = string_to_u256(&v);
+        for (k, v) in &state.storage {
+            let key = hex_to_u256(&hex::encode(k.0));
+            let value = hex_to_u256(&hex::encode(v.0));
             storage.insert(key, value);
         }
-        let bytecode = match &state.pre_code {
-            Some(bytecode) => Some(string_to_bytes(bytecode)),
-            None => None,
-        };
-        mock.mock_evm_actor_state(&to, storage, bytecode)?;
+        mock.mock_evm_actor_state(&to, storage, Some(state.code.to_vec()))?;
     }
     let pre_actors = mock.get_actors();
     mock.print_evm_actors("pre", pre_actors)?;
 
     // postconditions
-    mock.mock_actor_balance(
-        &from,
-        TokenAmount::from_atto(string_to_big_int(&input.context.balance.post_balance)),
-    )?;
-    for (eth_addr, state) in &input.states {
-        let eth_addr = string_to_eth_address(&eth_addr);
+    for (k, state) in &input.poststate {
+        let eth_addr = EthAddress(k.0);
         let to = Address::new_delegated(EAM_ACTOR_ID, &eth_addr.0).unwrap();
-        let balance = TokenAmount::from_atto(string_to_big_int(&state.post_balance));
+        let balance = TokenAmount::from_atto(state.get_balance());
         if let Some(create_contract_eth_addr) = create_contract_eth_addr {
             if eth_addr.eq(&create_contract_eth_addr) {
-                mock.mock_evm_actor(to, balance.clone());
+                mock.mock_evm_actor(to, balance.clone(), state.nonce);
             }
         }
         let mut storage = HashMap::<U256, U256>::new();
-        for (k, v) in &state.post_storage {
-            let key = string_to_u256(&k);
-            let value = string_to_u256(&v);
+        for (k, v) in &state.storage {
+            let key = hex_to_u256(&hex::encode(k.0));
+            let value = hex_to_u256(&hex::encode(v.0));
             storage.insert(key, value);
         }
-        let bytecode = match &state.post_code {
-            Some(bytecode) => Some(string_to_bytes(bytecode)),
-            None => None,
-        };
-        mock.mock_evm_actor_state(&to, storage, bytecode)?;
-        mock.mock_actor_balance(&to, balance)?;
+        mock.mock_evm_actor_state(&to, storage, Some(state.code.to_vec()))?;
+        mock.mock_actor_balance(&to, balance, Some(state.nonce))?;
     }
     let post_actors = mock.get_actors();
     mock.print_evm_actors("post", post_actors)?;
@@ -320,24 +284,23 @@ where
     return Ok((pre_actors, post_actors, contract_addrs));
 }
 
-pub fn to_message(context: &EvmContractContext) -> Message {
-    let from =
-        Address::new_delegated(EAM_ACTOR_ID, &string_to_eth_address(&context.from).0).unwrap();
+pub fn to_message(context: &EthTransactionTestVector) -> Message {
+    let from = Address::new_delegated(EAM_ACTOR_ID, &context.from.0).unwrap();
     let to: Address;
     let method_num: MethodNum;
     let mut params = RawBytes::from(vec![0u8; 0]);
-    if is_create_contract(&context.to) {
+    if context.create_contract() {
         to = Address::new_id(10);
         method_num = fil_actor_eam::Method::Create as u64;
         let params2 = CreateParams {
-            initcode: string_to_bytes(&context.input),
+            initcode: context.input.to_vec(),
             nonce: context.nonce,
         };
         params = RawBytes::serialize(params2).unwrap();
     } else {
-        to = Address::new_delegated(EAM_ACTOR_ID, &string_to_eth_address(&context.to).0).unwrap();
+        to = Address::new_delegated(EAM_ACTOR_ID, &context.to.0).unwrap();
         if context.input.len() > 0 {
-            params = RawBytes::serialize(ContractParams(string_to_bytes(&context.input))).unwrap();
+            params = RawBytes::serialize(ContractParams(context.input.to_vec())).unwrap();
             method_num = fil_actor_evm::Method::InvokeContract as u64
         } else {
             method_num = METHOD_SEND;
@@ -348,12 +311,12 @@ pub fn to_message(context: &EvmContractContext) -> Message {
         from,
         to,
         sequence: context.nonce,
-        value: TokenAmount::from_atto(string_to_big_int(&context.value)),
+        value: TokenAmount::from_atto(context.get_value()),
         method_num,
         params,
-        gas_limit: (context.gas_limit * 1000000) as i64,
-        gas_fee_cap: TokenAmount::from_atto(string_to_big_int(&context.gas_fee_cap)),
-        gas_premium: TokenAmount::from_atto(string_to_big_int(&context.gas_tip_cap)),
+        gas_limit: (context.gas.as_u64() * 1000000) as i64,
+        gas_fee_cap: TokenAmount::from_atto(context.get_max_fee_per_gas()),
+        gas_premium: TokenAmount::from_atto(context.get_max_priority_fee_per_gas()),
     }
 }
 

@@ -68,13 +68,3 @@ fn from_slice_test() {
         delegate_call_params.code, delegate_call_params.input
     );
 }
-
-#[async_std::test]
-async fn exec_export() {
-    init_log();
-    let input: EvmContractInput =
-        serde_json::from_str(include_str!("contracts/contract.json")).unwrap();
-    export_test_vector_file(input, Path::new("test_vector.json").to_path_buf())
-        .await
-        .unwrap();
-}

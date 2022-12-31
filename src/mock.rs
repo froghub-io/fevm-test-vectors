@@ -213,7 +213,7 @@ where
         );
     }
 
-    pub fn mock_evm_actor(&mut self, addr: Address, balance: TokenAmount) {
+    pub fn mock_evm_actor(&mut self, addr: Address, balance: TokenAmount, nonce: u64) {
         let mut id_addr = Address::new_id(0);
         let robust_address = Address::new_actor(&addr.to_bytes());
         self.mutate_state(INIT_ACTOR_ADDR, |st: &mut InitState| {
@@ -231,7 +231,7 @@ where
             actor(
                 self.get_actor_code(Type::EVM),
                 EMPTY_ARR_CID,
-                0,
+                nonce,
                 balance,
                 Some(addr),
             ),
@@ -382,13 +382,24 @@ where
         &mut self,
         addr: &Address,
         balance: TokenAmount,
+        nonce: Option<u64>,
     ) -> anyhow::Result<()> {
         let addr = self
             .normalize_address(addr)
             .expect("failed to normalize address");
         let mut a = self.get_actor(addr).unwrap();
+        let mut unchanged = true;
         if !a.balance.eq(&balance) {
             a.balance = balance;
+            unchanged = false;
+        }
+        if let Some(nonce) = nonce {
+            if a.nonce != nonce {
+                a.nonce = nonce;
+                unchanged = false;
+            }
+        }
+        if !unchanged {
             self.set_actor(addr, a);
         }
         Ok(())
