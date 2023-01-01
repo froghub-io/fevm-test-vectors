@@ -15,7 +15,7 @@ cargo build --release
 Extract transaction detail file through `evm tracing` (including contract slot changes, balance changes, and bytecodes, etc.).
 
 ``` bash
-RUST_LOG=info fevm-test-vectors extract-transaction --geth-rpc-endpoint <GETH_RPC_ENDPOINT> --tx-hash <TX_HASH> --out-dir <OUT_DIR> 
+RUST_LOG=info fevm-test-vectors extract --geth-rpc-endpoint <GETH_RPC_ENDPOINT> --tx-hash <TX_HASH> --out-dir <OUT_DIR> 
 ```
 
 **generate test vector**
@@ -34,7 +34,7 @@ RUST_LOG=info fevm-test-vectors generate --geth-rpc-endpoint <GETH_RPC_ENDPOINT>
 
 ## Consume Test Vector
 
-Use [froghub-io/ref-fvm](https://github.com/froghub-io/ref-fvm/tree/testing-evm-vectors) to consume test vectors.
+Use [froghub-io/ref-fvm](https://github.com/froghub-io/ref-fvm/tree/testing-evm-vectors) branch `testing-evm-vectors` to consume test vectors.
 
 ``` bash
 RUST_LOG=info CARGO_PROFILE_BENCH_DEBUG=true VECTOR=fevm-test-vectors/corpus/test_vectors/xxx.json cargo bench --bench  bench_conformance -- --nocapture

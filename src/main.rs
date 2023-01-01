@@ -20,8 +20,8 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum SubCommand {
+    Extract(Extract),
     Generate(Generate),
-    ExtractTransaction(ExtractTransaction),
     GenerateFromFile(GenerateFromFile),
 }
 
@@ -42,7 +42,7 @@ pub struct Generate {
 
 #[derive(Debug, Parser)]
 #[clap(about = "Extract transaction detail file through evm tracing.", long_about = None)]
-pub struct ExtractTransaction {
+pub struct Extract {
     #[clap(short, long)]
     geth_rpc_endpoint: String,
 
@@ -82,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
             let path = out_dir.join(format!("{}.json", config.tx_hash));
             block_on(export_test_vector_file(evm_input, path))?;
         }
-        SubCommand::ExtractTransaction(config) => {
+        SubCommand::Extract(config) => {
             let out_dir = Path::new(&config.out_dir);
             assert!(out_dir.is_dir(), "out_dir must directory");
             let tx_hash = H256::from_str(&*config.tx_hash)?;
