@@ -140,9 +140,10 @@ pub async fn export_test_vector_file(
     }
 
     const ENTROPY: &[u8] = b"prevrandao";
-    let ret = match input.block_mix_hash {
-        Some(v) => v.0.to_vec(),
-        None => vec![0u8; 32],
+    let ret = {
+        let mut bytes = [0; 32];
+        input.random.to_big_endian(&mut bytes);
+        bytes.to_vec()
     };
     let randomness = vec![RandomnessMatch {
         on: RandomnessRule {

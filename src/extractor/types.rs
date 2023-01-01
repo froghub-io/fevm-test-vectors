@@ -47,10 +47,10 @@ pub struct EthTransactionTestVector {
     // pub gas_limit: u64, // block gas limit
     pub base_fee_per_gas: Option<U256>,
     pub difficultly: U256,
+    pub random: U256,
     pub chain_id: U256,
     pub block_number: u64,
     pub block_hashes: BTreeMap<u64, H256>,
-    pub block_mix_hash: Option<H256>,
     pub timestamp: U256,
     // pre-state and post-state
     pub prestate: EthState,

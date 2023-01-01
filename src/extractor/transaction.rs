@@ -296,10 +296,14 @@ pub async fn extract_eth_transaction_test_vector<P: JsonRpcClient>(
         coinbase: block.author.unwrap(),
         base_fee_per_gas: block.base_fee_per_gas,
         difficultly: block.difficulty,
+        random: if block.difficulty != 0.into() {
+            block.difficulty
+        } else {
+            H256_to_U256(block.mix_hash.unwrap())
+        },
         chain_id: transaction.chain_id.unwrap(),
         block_number: block.number.unwrap().as_u64(),
         block_hashes,
-        block_mix_hash: block.mix_hash,
         timestamp: block.timestamp,
         prestate,
         poststate,
@@ -317,6 +321,10 @@ fn U256_to_H256(val: U256) -> H256 {
     let mut bytes = [0; 32];
     val.to_big_endian(&mut bytes);
     H256::from_slice(&bytes)
+}
+
+fn H256_to_U256(val: H256) -> U256 {
+    U256::from_big_endian(val.as_bytes())
 }
 
 #[tokio::test]
