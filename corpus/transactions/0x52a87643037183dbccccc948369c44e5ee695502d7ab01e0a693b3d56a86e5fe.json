@@ -15,12 +15,12 @@
   "coinbase": "0x95222290dd7278aa3ddd389cc1e1d165cc4bafe5",
   "base_fee_per_gas": "0x333917a18",
   "difficultly": "0x0",
+  "random": "0x4a0edea5888a0e0e054bd810f777a3d4da4add801deb4562036578bf18f4660c",
   "chain_id": "0x1",
   "block_number": 16310200,
   "block_hashes": {
     "16310200": "0x18cf6a75e53dd4057d37514b05d6262dbd162b0f5d3741ec67c466d9dfeb07bf"
   },
-  "block_mix_hash": "0x4a0edea5888a0e0e054bd810f777a3d4da4add801deb4562036578bf18f4660c",
   "timestamp": "0x63b12b8b",
   "prestate": {
     "0x0dc2c5d40cbcb4f4e107eaabb8c5a8dc6ff3b9f6": {
