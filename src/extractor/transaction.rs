@@ -24,7 +24,7 @@ pub async fn extract_eth_transaction_test_vector<P: JsonRpcClient>(
     block_hashes.insert(block.number.unwrap().as_u64(), block.hash.unwrap());
 
     let tx_from = transaction.from;
-    let tx_contract_address = transaction
+    let tx_to = transaction
         .to
         .unwrap_or_else(|| get_contract_address(tx_from, transaction.nonce));
 
@@ -61,13 +61,14 @@ pub async fn extract_eth_transaction_test_vector<P: JsonRpcClient>(
     let account_state = poststate.get_mut(&tx_from).unwrap();
     account_state.balance -= gas_fee;
 
-    let mut execution_contexts = vec![tx_contract_address];
+    let mut execution_contexts = vec![tx_to];
     let mut snapshots = vec![poststate.clone()];
 
     if transaction.to.is_none() {
         // FIXME the contract may have self-destructed
-        let code = provider.get_code(tx_contract_address, None).await?;
-        let eth_account_state = poststate.get_mut(&tx_contract_address).unwrap();
+        let code = provider.get_code(tx_to, None).await?;
+        assert_ne!(code.len(), 0);
+        let eth_account_state = poststate.get_mut(&tx_to).unwrap();
         eth_account_state.code = code;
     }
 
@@ -75,8 +76,8 @@ pub async fn extract_eth_transaction_test_vector<P: JsonRpcClient>(
     if !transaction.value.is_zero() {
         let account_state = poststate.get_mut(&tx_from).unwrap();
         account_state.balance -= transaction.value;
-        let account_state = poststate.get_mut(&tx_from).unwrap();
-        account_state.balance += transaction.value
+        let account_state = poststate.get_mut(&tx_to).unwrap();
+        account_state.balance += transaction.value;
     }
 
     let mut depth = 1u64;
@@ -182,6 +183,7 @@ pub async fn extract_eth_transaction_test_vector<P: JsonRpcClient>(
 
                     // FIXME
                     let code = provider.get_code(address, None).await?;
+                    assert_ne!(code.len(), 0);
                     poststate.get_mut(&address).unwrap().code = code;
                 }
 
@@ -219,6 +221,7 @@ pub async fn extract_eth_transaction_test_vector<P: JsonRpcClient>(
 
                     // FIXME
                     let code = provider.get_code(address, None).await?;
+                    assert_ne!(code.len(), 0);
                     poststate.get_mut(&address).unwrap().code = code;
                 }
 
@@ -327,16 +330,41 @@ fn H256_to_U256(val: H256) -> U256 {
     U256::from_big_endian(val.as_bytes())
 }
 
+// export RPC='http://localhost:8545'
+// export TX='0xff00..aa'
+// cargo test --package fevm-test-vectors --lib extractor::transaction::test_extract_eth_tv -- --exact -Z unstable-options --show-output
 #[tokio::test]
-async fn test_extract() {
-    let tx_hash =
-        H256::from_str("0xa1ab514169a899fcea29144a8eb6a4613b46f2108e15b0a5d43afd44e0baa839")
-            .unwrap();
-    let provider = Provider::<Http>::try_from("http://localhost:8546")
-        .expect("could not instantiate HTTP Provider");
+async fn test_extract_eth_tv() {
+    let rpc = std::env::var("RPC").unwrap_or("http://localhost:8545".to_owned());
+    let tx_hash = std::env::var("TX").unwrap();
+    let tx_hash = H256::from_str(&tx_hash).unwrap();
+
+    let provider = Provider::<Http>::try_from(rpc).expect("could not instantiate HTTP Provider");
 
     let r = extract_eth_transaction_test_vector(&provider, tx_hash)
         .await
         .unwrap();
-    dbg!(&r.prestate, &r.poststate);
+    for (address, account) in r.prestate {
+        let pre_balance = account.balance;
+        let post_balance = r.poststate.get(&address).unwrap().balance;
+        if pre_balance != post_balance {
+            if pre_balance < post_balance {
+                println!(
+                    "{:?}, before: {}, after: {}, diff: {}",
+                    address,
+                    pre_balance,
+                    post_balance,
+                    post_balance - pre_balance
+                )
+            } else {
+                println!(
+                    "{:?}, before: {}, after: {}, diff: -{}",
+                    address,
+                    pre_balance,
+                    post_balance,
+                    pre_balance - post_balance
+                )
+            }
+        }
+    }
 }
