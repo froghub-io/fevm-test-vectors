@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use fevm_test_vectors::types::EvmContractInput;
-use fevm_test_vectors::util::{compute_address_create, is_create_contract, string_to_eth_address};
+use fevm_test_vectors::extractor::types::EthTransactionTestVector;
+use fevm_test_vectors::util::{compute_address_create, hex_to_eth_address};
 use fevm_test_vectors::{export_test_vector_file, init_log, load_evm_contract_input};
 use fil_actor_eam::EthAddress;
 use fil_actor_evm::DelegateCallParams;
@@ -11,8 +11,8 @@ use serde_tuple::*;
 
 #[test]
 fn evm_create_test() {
-    let from = string_to_eth_address("0x443c0c6F6Cb301B49eE5E9Be07B867378e73Fb54");
-    let expected = string_to_eth_address("0xcc3d7ca4a302d196e70760e772ee26d38bd09dca");
+    let from = hex_to_eth_address("0x443c0c6F6Cb301B49eE5E9Be07B867378e73Fb54");
+    let expected = hex_to_eth_address("0xcc3d7ca4a302d196e70760e772ee26d38bd09dca");
     let result = compute_address_create(&EthAddress(from.0), 1);
     assert_eq!(result.0[..], expected.0[..]);
 }
@@ -67,4 +67,16 @@ fn from_slice_test() {
         "{:?}, {:?}",
         delegate_call_params.code, delegate_call_params.input
     );
+}
+
+#[async_std::test]
+async fn exec_export() {
+    init_log();
+    let input: EthTransactionTestVector = serde_json::from_str(include_str!(
+        "contracts/0x26c9c5e5e4f35e7eebcefec434b986b13fa5d7768c1e89a793c41be58f977195.json"
+    ))
+    .unwrap();
+    export_test_vector_file(input, Path::new("test_vector.json").to_path_buf())
+        .await
+        .unwrap();
 }

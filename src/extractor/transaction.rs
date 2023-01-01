@@ -322,7 +322,8 @@ fn U256_to_H256(val: U256) -> H256 {
 #[tokio::test]
 async fn test_extract() {
     let tx_hash =
-        H256::from_str("0xa1ab514169a899fcea29144a8eb6a4613b46f2108e15b0a5d43afd44e0baa839").unwrap();
+        H256::from_str("0xa1ab514169a899fcea29144a8eb6a4613b46f2108e15b0a5d43afd44e0baa839")
+            .unwrap();
     let provider = Provider::<Http>::try_from("http://localhost:8546")
         .expect("could not instantiate HTTP Provider");
 

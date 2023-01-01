@@ -239,6 +239,9 @@ where
         let eth_addr = EthAddress(k.0);
         let to = Address::new_delegated(EAM_ACTOR_ID, &eth_addr.0).unwrap();
         let balance = TokenAmount::from_atto(state.get_balance());
+        if eth_addr.eq(&EthAddress(input.from.0)) {
+            continue;
+        }
 
         contract_addrs.push(to.clone());
 
@@ -264,6 +267,9 @@ where
         let eth_addr = EthAddress(k.0);
         let to = Address::new_delegated(EAM_ACTOR_ID, &eth_addr.0).unwrap();
         let balance = TokenAmount::from_atto(state.get_balance());
+        if eth_addr.eq(&EthAddress(input.from.0)) {
+            continue;
+        }
         if let Some(create_contract_eth_addr) = create_contract_eth_addr {
             if eth_addr.eq(&create_contract_eth_addr) {
                 mock.mock_evm_actor(to, balance.clone(), state.nonce);
