@@ -55,11 +55,15 @@ pub async fn extract_eth_transaction_test_vector<P: JsonRpcClient>(
         .debug_trace_transaction(tx_hash, trace_options)
         .await?;
 
+    let sender_account = poststate.get_mut(&tx_from).unwrap();
+
     // calculate gas fee(including leftover gas)
     let gas_price = transaction.gas_price.unwrap();
     let gas_fee = gas_price * transaction.gas;
-    let account_state = poststate.get_mut(&tx_from).unwrap();
-    account_state.balance -= gas_fee;
+    sender_account.balance -= gas_fee;
+
+    // increase sender nonce
+    sender_account.nonce += 1;
 
     let mut execution_contexts = vec![tx_to];
     let mut snapshots = vec![poststate.clone()];
